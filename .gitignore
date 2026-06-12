@@ -1,0 +1,10 @@
+.gradle/
+build/
+bin/
+run/
+*.log
+
+s9lab-backend/build/
+s9lab-backend/config/config.json
+s9lab-backend/database/
+s9lab-backend/backups/

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/s9labclient.client.iml" filepath="$PROJECT_DIR$/.idea/modules/s9labclient.client.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/s9labclient.main.iml" filepath="$PROJECT_DIR$/.idea/modules/s9labclient.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/s9labclient.test.iml" filepath="$PROJECT_DIR$/.idea/modules/s9labclient.test.iml" />
+    </modules>
+  </component>
+</project>

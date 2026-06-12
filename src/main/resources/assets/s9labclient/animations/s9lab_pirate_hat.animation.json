@@ -1,0 +1,21 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.s9lab_pirate_hat.feather_idle": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "feather": {
+          "rotation": {
+            "0.0": [0, 0, -28],
+            "0.4": [0, 0, -34],
+            "0.8": [0, 0, -29],
+            "1.2": [0, 0, -22],
+            "1.6": [0, 0, -27],
+            "2.0": [0, 0, -28]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.s9lab_cape.idle": {
+      "loop": true,
+      "animation_length": 2,
+      "bones": {
+        "cape": {
+          "rotation": {
+            "0.0": [6, 0, 0],
+            "1.0": [9, 0, 0],
+            "2.0": [6, 0, 0]
+          }
+        }
+      }
+    }
+  }
+}

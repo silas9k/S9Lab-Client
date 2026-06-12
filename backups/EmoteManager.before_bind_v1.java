@@ -1,0 +1,138 @@
+package site.s9lab.s9labclient.client.emote;
+
+import java.util.Arrays;
+import java.util.List;
+import net.minecraft.client.MinecraftClient;
+
+public final class EmoteManager {
+    private static Emote activeEmote;
+    private static int remainingTicks;
+    private static int elapsedTicks;
+
+    private EmoteManager() {
+    }
+
+    public static void tick(MinecraftClient client) {
+        if (client.player == null) {
+            stop();
+            return;
+        }
+
+        if (remainingTicks > 0) {
+            remainingTicks--;
+            elapsedTicks++;
+        } else {
+            activeEmote = null;
+            elapsedTicks = 0;
+        }
+    }
+
+    public static void play(Emote emote) {
+        activeEmote = emote;
+        remainingTicks = emote.durationTicks();
+        elapsedTicks = 0;
+    }
+
+    public static boolean play(String idOrDisplayName) {
+        Emote emote = byIdOrName(idOrDisplayName);
+        if (emote == null) {
+            return false;
+        }
+        play(emote);
+        return true;
+    }
+
+    public static void stop() {
+        activeEmote = null;
+        remainingTicks = 0;
+        elapsedTicks = 0;
+    }
+
+    public static boolean isActive() {
+        return activeEmote != null && remainingTicks > 0;
+    }
+
+    public static Emote activeEmote() {
+        return activeEmote;
+    }
+
+    public static float wave(float age, float speed) {
+        return (float) Math.sin(age * speed);
+    }
+
+    public static float progress() {
+        if (activeEmote == null) {
+            return 0.0F;
+        }
+        return Math.min(1.0F, elapsedTicks / (float) activeEmote.durationTicks());
+    }
+
+    public static List<Emote> all() {
+        return Arrays.asList(Emote.values());
+    }
+
+    public static List<String> ids() {
+        return all().stream().map(Emote::id).toList();
+    }
+
+    public static Emote byIdOrName(String value) {
+        String normalized = normalize(value);
+        for (Emote emote : Emote.values()) {
+            if (emote.id().equals(normalized) || normalize(emote.displayName()).equals(normalized)) {
+                return emote;
+            }
+        }
+        return null;
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
+    }
+
+    public enum Emote {
+        LIGHTNING_WAVE("lightning_wave", "Lightning Wave", "Fast hello with S9 energy.", 20 * 7, 0xFF7EA1FF),
+        SPIN_FLEX("spin_flex", "Spin Flex", "Confident flex pose.", 20 * 7, 0xFFFFD166),
+        CAPE_BOW("cape_bow", "Cape Bow", "Small respectful bow.", 20 * 6, 0xFF8BD3FF),
+        DRAGON_FLAP("dragon_flap", "Dragon Flap", "Wing-friendly arm flap.", 20 * 7, 0xFFB388FF),
+        DAB("dab", "S9 Dab", "Classic quick dab.", 20 * 5, 0xFFFF6B6B),
+        T_POSE("t_pose", "T-Pose", "Maximum dominance.", 20 * 5, 0xFFE8E8E8),
+        ROBOT("robot", "Robot", "Sharp mechanical moves.", 20 * 8, 0xFF77E6C6),
+        CHILL_BOUNCE("chill_bounce", "Chill Bounce", "Relaxed idle dance.", 20 * 9, 0xFF55D66B),
+        SKY_POINT("sky_point", "Sky Point", "Hero pose upwards.", 20 * 6, 0xFFFF9F45),
+        HEART_BEAT("heart_beat", "Heart Beat", "Soft cute pulse pose.", 20 * 7, 0xFFFF7AC8);
+
+        private final String id;
+        private final String displayName;
+        private final String description;
+        private final int durationTicks;
+        private final int accentColor;
+
+        Emote(String id, String displayName, String description, int durationTicks, int accentColor) {
+            this.id = id;
+            this.displayName = displayName;
+            this.description = description;
+            this.durationTicks = durationTicks;
+            this.accentColor = accentColor;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        public String description() {
+            return description;
+        }
+
+        public int durationTicks() {
+            return durationTicks;
+        }
+
+        public int accentColor() {
+            return accentColor;
+        }
+    }
+}

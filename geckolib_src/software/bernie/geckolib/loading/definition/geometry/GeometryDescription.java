@@ -1,0 +1,51 @@
+package software.bernie.geckolib.loading.definition.geometry;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import net.minecraft.class_243;
+import net.minecraft.class_3518;
+import org.jetbrains.annotations.ApiStatus;
+import org.jspecify.annotations.Nullable;
+import software.bernie.geckolib.GeckoLibConstants;
+import software.bernie.geckolib.util.JsonUtil;
+
+/**
+ * Container class for geometry properties, only used for intermediary steps between .json deserialization and GeckoLib object creation
+ * <p>
+ * This is not a 1:1 parity container for the specification, as GeckoLib intentionally discards properties that have no possible uses
+ *
+ * @param identifier The asset identifier for this model. Not used by GeckoLib
+ * @param visibleBoundsWidth The width of the visible bounds for this model. Not used by GeckoLib
+ * @param visibleBoundsHeight The height of the visible bounds for this model. Not used by GeckoLib
+ * @param visibleBoundsOffset The offset of the visible bounds for this model. Not used by GeckoLib
+ * @param textureWidth The width of the texture for this model. Technically optional, but GeckoLib requires it
+ * @param textureHeight The height of the texture for this model. Technically optional, but GeckoLib requires it
+ * @see <a href="https://learn.microsoft.com/en-us/minecraft/creator/reference/content/schemasreference/schemas/minecraftschema_geometry_1.21.0?view=minecraft-bedrock-experimental">Bedrock Geometry Spec 1.21.0</a>
+ */
+@ApiStatus.Internal
+public record GeometryDescription(String identifier, @Nullable Float visibleBoundsWidth, @Nullable Float visibleBoundsHeight, @Nullable class_243 visibleBoundsOffset,
+								  int textureWidth, int textureHeight) {
+	/**
+	 * Parse a GeometryDescription instance from raw .json input via {@link Gson}
+	 */
+	public static JsonDeserializer<GeometryDescription> gsonDeserializer() throws JsonParseException {
+		return (json, type, context) -> {
+			final JsonObject obj = json.getAsJsonObject();
+			final String identifier = class_3518.method_15253(obj, "identifier", null);
+			final Float visibleBoundsWidth = JsonUtil.getOptionalFloat(obj, "visible_bounds_width");
+			final Float visibleBoundsHeight = JsonUtil.getOptionalFloat(obj, "visible_bounds_height");
+			final class_243 visibleBoundsOffset = JsonUtil.jsonToVec3(class_3518.method_15292(obj, "visible_bounds_offset", null));
+			final int textureWidth = class_3518.method_15282(obj, "texture_width", 16);
+			final int textureHeight = class_3518.method_15282(obj, "texture_height", 16);
+
+			if (!obj.has("texture_width") || !obj.has("texture_height"))
+				GeckoLibConstants.LOGGER.warn("GeckoLib model {} does not have texture dimensions specified, likely an invalid geometry json!", identifier);
+
+			return new GeometryDescription(identifier == null ? String.valueOf(obj.hashCode()) : identifier,
+										   visibleBoundsWidth, visibleBoundsHeight, visibleBoundsOffset,
+										   textureWidth, textureHeight);
+		};
+	}
+}

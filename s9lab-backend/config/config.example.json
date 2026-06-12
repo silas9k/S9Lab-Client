@@ -1,0 +1,11 @@
+{
+  "host": "0.0.0.0",
+  "port": 8788,
+  "websocketPort": 8789,
+  "databasePath": "database/s9lab.db",
+  "backupDirectory": "backups",
+  "adminSecret": "CHANGE_ME_TO_A_LONG_RANDOM_SECRET",
+  "apiVersion": "v1",
+  "enableWebsocket": true,
+  "rateLimitPerMinute": 120
+}

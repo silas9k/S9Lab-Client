@@ -1,0 +1,216 @@
+{
+  "cosmetics": [
+    {
+      "id": "s9lab_cape",
+      "name": "S9Lab Cape",
+      "type": "cape",
+      "texture": "textures/cosmetics/capes/s9lab_cape.png",
+      "model": "geo/s9lab_cape.geo.json",
+      "animation": "animations/s9lab_cape.animation.json",
+      "animated": false
+    },
+    {
+      "id": "s9lab_flux_cape",
+      "name": "Flux Cape",
+      "type": "cape",
+      "texture": "textures/cosmetics/capes/s9lab_flux_cape.png",
+      "model": "geo/s9lab_cape.geo.json",
+      "animation": "animations/s9lab_cape.animation.json",
+      "animated": true
+    },
+    {
+      "id": "s9lab_void_cape",
+      "name": "Void Cape",
+      "type": "cape",
+      "texture": "textures/cosmetics/capes/s9lab_void_cape.png",
+      "model": "geo/s9lab_cape.geo.json",
+      "animation": "animations/s9lab_cape.animation.json",
+      "animated": false
+    },
+    {
+      "id": "s9lab_redstone_cape",
+      "name": "Redstone Cape",
+      "type": "cape",
+      "texture": "textures/cosmetics/capes/s9lab_redstone_cape.png",
+      "model": "geo/s9lab_cape.geo.json",
+      "animation": "animations/s9lab_cape.animation.json",
+      "animated": true
+    },
+    {
+      "id": "s9lab_bandana",
+      "name": "Black Bandana",
+      "type": "bandana",
+      "texture": "textures/cosmetics/bandanas/s9lab_bandana.png",
+      "model": "geo/s9lab_bandana.geo.json",
+      "animation": "animations/s9lab_bandana.animation.json",
+      "animated": false
+    },
+    {
+      "id": "s9lab_pulse_bandana",
+      "name": "Pulse Bandana",
+      "type": "bandana",
+      "texture": "textures/cosmetics/bandanas/s9lab_pulse_bandana.png",
+      "model": "geo/s9lab_bandana.geo.json",
+      "animation": "animations/s9lab_bandana.animation.json",
+      "animated": true
+    },
+    {
+      "id": "s9lab_void_bandana",
+      "name": "Void Bandana",
+      "type": "bandana",
+      "texture": "textures/cosmetics/bandanas/s9lab_void_bandana.png",
+      "model": "geo/s9lab_bandana.geo.json",
+      "animation": "animations/s9lab_bandana.animation.json",
+      "animated": false
+    },
+    {
+      "id": "s9lab_red_bandana",
+      "name": "Redstone Bandana",
+      "type": "bandana",
+      "texture": "textures/cosmetics/bandanas/s9lab_red_bandana.png",
+      "model": "geo/s9lab_bandana.geo.json",
+      "animation": "animations/s9lab_bandana.animation.json",
+      "animated": false
+    },
+    {
+      "id": "s9lab_color_dragon_wings",
+      "name": "Color Dragon Wings",
+      "type": "wings",
+      "texture": "minecraft:textures/entity/enderdragon/dragon.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_dragon_wings",
+      "name": "Dragon Wings",
+      "type": "wings",
+      "texture": "minecraft:textures/entity/enderdragon/dragon.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_blue_energy_wings",
+      "name": "Blue Energy Wings",
+      "type": "wings",
+      "texture": "minecraft:textures/entity/enderdragon/dragon.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_pirate_hat",
+      "name": "Pirate Hat",
+      "type": "hat",
+      "texture": "textures/cosmetics/hats/s9lab_pirate_hat.png",
+      "animated": false
+    },
+    {
+      "id": "s9lab_guinea_pig_hat",
+      "name": "Guinea Pig Hat",
+      "type": "hat",
+      "texture": "textures/cosmetics/hats/s9lab_guinea_pig_hat.png",
+      "animated": false
+    },
+    {
+    "id": "s9lab_duck_hat",
+    "name": "Duck Hat",
+    "type": "hat",
+    "texture": "textures/cosmetics/hats/s9lab_duck_hat.png",
+    "animated": false
+    },
+    {
+      "id": "s9lab_gold_halo",
+      "name": "Gold Halo",
+      "type": "halo",
+      "texture": "textures/cosmetics/halos/s9lab_gold_halo.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_void_halo",
+      "name": "Void Halo",
+      "type": "halo",
+      "texture": "textures/cosmetics/halos/s9lab_void_halo.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_mini_me",
+      "name": "Mini Me",
+      "type": "shoulder",
+      "texture": "textures/cosmetics/shoulder/s9lab_mini_me.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_shadow_buddy",
+      "name": "Shadow Buddy",
+      "type": "shoulder",
+      "texture": "textures/cosmetics/shoulder/s9lab_shadow_buddy.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_gold_glint",
+      "name": "Gold Glint",
+      "type": "glint",
+      "texture": "textures/cosmetics/glint/gold_glint.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_ice_glint",
+      "name": "Ice Glint",
+      "type": "glint",
+      "texture": "textures/cosmetics/glint/ice_glint.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_emerald_glint",
+      "name": "Emerald Glint",
+      "type": "glint",
+      "texture": "textures/cosmetics/glint/emerald_glint.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_shadow_glint",
+      "name": "Shadow Glint",
+      "type": "glint",
+      "texture": "textures/cosmetics/glint/shadow_glint.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_creeper_glint",
+      "name": "Creeper Glint",
+      "type": "glint",
+      "texture": "minecraft:textures/entity/creeper/creeper_armor.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_rainbow_glint",
+      "name": "Rainbow Glint",
+      "type": "glint",
+      "texture": "textures/cosmetics/glint/gold_glint.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_emote_t_pose",
+      "name": "T-Pose",
+      "type": "emote",
+      "texture": "minecraft:textures/item/armor_stand.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_emote_griddy",
+      "name": "Griddy",
+      "type": "emote",
+      "texture": "minecraft:textures/item/diamond_boots.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_emote_big_head",
+      "name": "Big Head",
+      "type": "emote",
+      "texture": "minecraft:textures/item/player_head.png",
+      "animated": true
+    },
+    {
+      "id": "s9lab_emote_billy_bounce",
+      "name": "Billy Bounce",
+      "type": "emote",
+      "texture": "minecraft:textures/item/slime_ball.png",
+      "animated": true
+    }
+  ]
+}

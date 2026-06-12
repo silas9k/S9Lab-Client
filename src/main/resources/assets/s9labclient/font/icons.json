@@ -1,0 +1,13 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "s9labclient:font/s9_icon.png",
+      "ascent": 8,
+      "height": 8,
+      "chars": [
+        "\uE000"
+      ]
+    }
+  ]
+}

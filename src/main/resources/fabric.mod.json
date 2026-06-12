@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "s9labclient",
+  "version": "1.0.0",
+  "name": "S9Lab Client",
+  "description": "",
+  "authors": ["s9lab, s9labdev, silas"],
+  "contact": {
+    "homepage": "https://s9lab.site"
+  },
+  "icon": "assets/s9labclient/icon.png",
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "site.s9lab.s9labclient.client.S9LabClientClient"
+    ],
+    "main": [
+      "site.s9lab.s9labclient.S9LabClient"
+    ],
+    "modmenu": [
+      "site.s9lab.s9labclient.client.compat.S9LabModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "s9labclient.mixins.json",
+    {
+      "config": "s9labclient.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
+    "geckolib": "*",
+    "minecraft": "1.21.11",
+    "java": ">=21"
+  },
+  "suggests": {
+    "waveycapes": "*"
+  }
+}

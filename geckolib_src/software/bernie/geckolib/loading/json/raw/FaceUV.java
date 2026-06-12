@@ -1,0 +1,59 @@
+package software.bernie.geckolib.loading.json.raw;
+
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import net.minecraft.class_3518;
+import net.minecraft.class_3532;
+import org.jspecify.annotations.Nullable;
+import software.bernie.geckolib.GeckoLibConstants;
+import software.bernie.geckolib.util.JsonUtil;
+
+/**
+ * Container class for face UV information, only used in deserialization at startup
+ *
+ * @param materialInstance An optional material reference for this face, not used by GeckoLib
+ * @param uv The uv origin for this face
+ * @param uvSize The uv size for this face
+ * @param uvRotation The uv rotation for this face, defaults to {@link Rotation#NONE}. Must be in 90-degree increments
+ */
+public record FaceUV(@Nullable String materialInstance, double[] uv, double[] uvSize, Rotation uvRotation) {
+	public static JsonDeserializer<FaceUV> deserializer() throws JsonParseException {
+		return (json, type, context) -> {
+			JsonObject obj = json.getAsJsonObject();
+			String materialInstance = class_3518.method_15253(obj, "material_instance", null);
+			double[] uv = JsonUtil.jsonArrayToDoubleArray(class_3518.method_15292(obj, "uv", null));
+			double[] uvSize = JsonUtil.jsonArrayToDoubleArray(class_3518.method_15292(obj, "uv_size", null));
+			Rotation uvRotation = Rotation.fromValue(class_3518.method_15282(obj, "uv_rotation", 0));
+
+			return new FaceUV(materialInstance, uv, uvSize, uvRotation);
+		};
+	}
+
+	public enum Rotation {
+		NONE,
+		CLOCKWISE_90,
+		CLOCKWISE_180,
+		CLOCKWISE_270;
+
+		public static Rotation fromValue(int value) throws JsonParseException {
+			try {
+				return Rotation.values()[(value % 360) / 90];
+			}
+			catch (Exception e) {
+                GeckoLibConstants.LOGGER.error("Invalid Face UV rotation: {}", value);
+
+				return fromValue(class_3532.method_15375(Math.abs(value) / 90f) * 90);
+			}
+		}
+
+		public float[] rotateUvs(float u, float v, float uWidth, float vHeight) {
+			return switch (this) {
+				case NONE -> new float[] {u, v, uWidth, v, uWidth, vHeight, u, vHeight};
+				case CLOCKWISE_90 -> new float[] {uWidth, v, uWidth, vHeight, u, vHeight, u, v};
+				case CLOCKWISE_180 -> new float[] {uWidth, vHeight, u, vHeight, u, v, uWidth, v};
+				case CLOCKWISE_270 -> new float[] {u, vHeight, u, v, uWidth, v, uWidth, vHeight};
+			};
+		}
+	}
+}
