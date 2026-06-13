@@ -22,9 +22,11 @@ public class ButtonComponent extends Component {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks, ClientTheme theme, AnimationManager animations) {
         boolean hovered = contains(mouseX, mouseY);
         float hover = animations.animate(id + ".hover", hovered, deltaTicks);
-        int color = ClientTheme.mix(theme.cardColor(), theme.cardHoverColor(), hover);
-        int border = ClientTheme.mix(theme.borderColor(), ClientTheme.withAlpha(theme.accentColor(), 170), hover);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), color, border);
+        int color = ClientTheme.mix(0xFF17191D, 0xFF25282E, hover);
+        int border = ClientTheme.mix(0xFF3C414B, ClientTheme.withAlpha(theme.accentColor(), 230), hover);
+        context.fill(x + 1, y + 1, x + width + 1, y + height + 1, 0x66000000);
+        context.fill(x, y, x + width, y + height, color);
+        PremiumRender.outline(context, x, y, width, height, 0, border);
         PremiumRender.centeredText(context, label, x + width / 2, y + (height - MinecraftClient.getInstance().textRenderer.fontHeight) / 2, theme.textColor());
     }
 

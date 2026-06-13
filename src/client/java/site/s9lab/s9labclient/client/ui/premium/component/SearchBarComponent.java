@@ -29,8 +29,8 @@ public class SearchBarComponent extends Component {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks, ClientTheme theme, AnimationManager animations) {
         MinecraftClient client = MinecraftClient.getInstance();
         float active = animations.animate(id + ".active", focused || contains(mouseX, mouseY), deltaTicks);
-        int border = ClientTheme.mix(theme.borderColor(), ClientTheme.withAlpha(theme.accentColor(), 190), active);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), theme.cardColor(), border);
+        int border = ClientTheme.mix(0xAA7A7F88, ClientTheme.withAlpha(theme.accentColor(), 220), active);
+        PremiumRender.shopInput(context, x, y, width, height, focused || contains(mouseX, mouseY), border);
 
         String value = getter.get();
         String text = value.isBlank() && !focused ? "Search..." : value + (focused && System.currentTimeMillis() / 450L % 2L == 0L ? "_" : "");

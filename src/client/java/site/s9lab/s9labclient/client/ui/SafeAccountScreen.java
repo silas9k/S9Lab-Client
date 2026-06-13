@@ -1,5 +1,7 @@
 package site.s9lab.s9labclient.client.ui;
 
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -13,21 +15,17 @@ import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
 
 public class SafeAccountScreen extends ResponsiveScreen {
     private final Screen parent;
-    private String statusMessage = "Using the account from your Minecraft Launcher session.";
+    private int scroll;
 
     public SafeAccountScreen(Screen parent) {
-        super(Text.literal("Select Account"));
+        super(Text.literal("S9Lab Accounts"));
         this.parent = parent;
-    }
-
-    @Override
-    protected void init() {
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         ensureResponsiveLayout();
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x77000000);
+        PremiumRender.shopBackdrop(context);
         renderWindow(context, mouseX, mouseY);
         super.render(context, mouseX, mouseY, deltaTicks);
     }
@@ -36,30 +34,46 @@ public class SafeAccountScreen extends ResponsiveScreen {
     public boolean mouseClicked(Click click, boolean doubled) {
         int mouseX = (int) click.x();
         int mouseY = (int) click.y();
-
         if (inside(mouseX, mouseY, closeX(), closeY(), 28, 28)) {
             close();
             return true;
         }
-
-        if (inside(mouseX, mouseY, refreshX(), refreshY(), refreshWidth(), 34)) {
-            Session session = MinecraftClient.getInstance().getSession();
-            statusMessage = "Refreshed launcher session: " + session.getUsername();
+        if (inside(mouseX, mouseY, loginX(), actionY(), loginW(), 32)) {
+            if (AccountLoginHelper.loginRunning()) {
+                AccountLoginHelper.cancelMicrosoftLogin();
+            } else {
+                AccountLoginHelper.beginMicrosoftLogin();
+            }
             return true;
         }
 
-        if (inside(mouseX, mouseY, addX(), addY(), addWidth(), 34)) {
-            AccountLoginHelper.openBrowserLogin();
-            statusMessage = "Opened minecraft.net login. Relaunch through your launcher after switching accounts.";
-            return true;
+        List<AccountLoginHelper.StoredAccount> accounts = rows();
+        int y = listY() - scroll;
+        for (AccountLoginHelper.StoredAccount account : accounts) {
+            if (inside(mouseX, mouseY, rowX(), y, rowWidth(), 56)) {
+                int removeX = rowX() + rowWidth() - 76;
+                if (!account.launcherSession() && inside(mouseX, mouseY, removeX, y + 17, 58, 22)) {
+                    AccountLoginHelper.removeAccount(account.uuid());
+                    return true;
+                }
+                if (!account.launcherSession()) {
+                    AccountLoginHelper.switchTo(account);
+                }
+                return true;
+            }
+            y += 64;
         }
-
-        if (inside(mouseX, mouseY, rowX(), rowY(), rowWidth(), 54)) {
-            statusMessage = "This launcher account is already active.";
-            return true;
-        }
-
         return super.mouseClicked(click, doubled);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (inside((int) mouseX, (int) mouseY, rowX(), listY(), rowWidth(), listH())) {
+            int max = Math.max(0, rows().size() * 64 - listH());
+            scroll = Math.max(0, Math.min(max, scroll - (int) Math.round(verticalAmount * 24.0D)));
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -68,97 +82,82 @@ public class SafeAccountScreen extends ResponsiveScreen {
     }
 
     private void renderWindow(DrawContext context, int mouseX, int mouseY) {
-        Session session = MinecraftClient.getInstance().getSession();
         int x = windowX();
         int y = windowY();
         int width = windowWidth();
         int height = windowHeight();
         ClientTheme theme = ThemeManager.theme();
-
-        context.fill(x + 3, y + 3, x + width + 3, y + height + 3, 0x77000000);
-        PremiumRender.card(context, x, y, width, height, 2, 0xE914161A, 0xFF2D3138);
-        PremiumRender.roundedRect(context, x, y, width, 68, 2, 0xDD1A1C21);
-        PremiumRender.roundedRect(context, x + 14, y + 67, width - 28, 1, 0, theme.borderColor());
-
-        context.drawTextWithShadow(this.textRenderer, Text.literal("ACCOUNT"), x + 30, y + 24, 0xFFFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Launcher session"), x + 30, y + 39, 0xFF9AA1B2);
+        PremiumRender.shopPanel(context, x, y, width, height, 64, 48);
+        context.drawTextWithShadow(textRenderer, Text.literal("ACCOUNTS"), x + 26, y + 20, 0xFFFFFFFF);
+        context.drawTextWithShadow(textRenderer, Text.literal("Microsoft browser login inside S9Lab Client"), x + 26, y + 36, 0xFF9AA1B2);
         renderClose(context, mouseX, mouseY);
-        renderAccountRow(context, session, mouseX, mouseY);
-        renderLoginInfo(context);
-        renderFooter(context, session, mouseX, mouseY);
+
+        int listX = rowX();
+        int listY = listY();
+        context.enableScissor(listX, listY, listX + rowWidth(), listY + listH());
+        int rowY = listY - scroll;
+        for (AccountLoginHelper.StoredAccount account : rows()) {
+            renderAccountRow(context, account, rowY, mouseX, mouseY, theme.accentColor());
+            rowY += 64;
+        }
+        context.disableScissor();
+
+        String status = AccountLoginHelper.status();
+        if (!AccountLoginHelper.lastError().isBlank()) {
+            status = AccountLoginHelper.lastError();
+        }
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, status, width - 52)), x + 26, y + height - 39, AccountLoginHelper.lastError().isBlank() ? 0xFF9AA1B2 : 0xFFFFB454);
+        String label = AccountLoginHelper.loginRunning() ? "Cancel Login" : "Mit Microsoft anmelden";
+        renderActionButton(context, loginX(), actionY(), loginW(), 32, label, inside(mouseX, mouseY, loginX(), actionY(), loginW(), 32), theme.accentColor());
+    }
+
+    private void renderAccountRow(DrawContext context, AccountLoginHelper.StoredAccount account, int y, int mouseX, int mouseY, int accent) {
+        int x = rowX();
+        int width = rowWidth();
+        boolean hovered = inside(mouseX, mouseY, x, y, width, 56);
+        PremiumRender.card(context, x, y, width, 56, 0, hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD, account.launcherSession() ? accent : PremiumRender.SHOP_SOFT_BORDER);
+        renderAvatar(context, x + 12, y + 8, account.launcherSession() ? 0xFF2E5BFF : 0xFF111111);
+        context.drawTextWithShadow(textRenderer, Text.literal(account.username().toUpperCase()), x + 62, y + 12, 0xFFFFFFFF);
+        String sub = account.launcherSession()
+                ? "Current launcher session"
+                : account.status().isBlank() ? "Microsoft account - click to switch" : account.status();
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, sub, width - 160)), x + 62, y + 31, account.reauthRequired() ? 0xFFFFB454 : 0xFF9AA1B2);
+        if (account.launcherSession()) {
+            renderBadge(context, x + width - 70, y + 18, 52, 20, "Active", accent);
+        } else {
+            renderActionButton(context, x + width - 76, y + 17, 58, 22, "Remove", inside(mouseX, mouseY, x + width - 76, y + 17, 58, 22), accent);
+        }
+    }
+
+    private List<AccountLoginHelper.StoredAccount> rows() {
+        List<AccountLoginHelper.StoredAccount> rows = new ArrayList<>();
+        rows.add(AccountLoginHelper.currentLauncherAccount());
+        rows.addAll(AccountLoginHelper.loadAccounts());
+        return rows;
     }
 
     private void renderClose(DrawContext context, int mouseX, int mouseY) {
-        int x = closeX();
-        int y = closeY();
-        boolean hovered = inside(mouseX, mouseY, x, y, 28, 28);
-        ClientTheme theme = ThemeManager.theme();
-        PremiumRender.card(context, x, y, 28, 28, 2, hovered ? 0xCC2A3650 : 0x8824334E, hovered ? theme.accentColor() : theme.borderColor());
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("X"), x + 14, y + 9, hovered ? 0xFFFFFFFF : 0xFF9AA1B2);
+        boolean hovered = inside(mouseX, mouseY, closeX(), closeY(), 28, 28);
+        renderActionButton(context, closeX(), closeY(), 28, 28, "X", hovered, ThemeManager.theme().accentColor());
     }
 
-    private void renderAccountRow(DrawContext context, Session session, int mouseX, int mouseY) {
-        int x = rowX();
-        int y = rowY();
-        int width = rowWidth();
-        boolean hovered = inside(mouseX, mouseY, x, y, width, 54);
-        ClientTheme theme = ThemeManager.theme();
-
-        PremiumRender.card(context, x, y, width, 54, 2, hovered ? 0xD91A2030 : 0xB9141822, theme.accentColor());
-
-        renderAvatar(context, x + 16, y + 7);
-        context.drawTextWithShadow(this.textRenderer, Text.literal(session.getUsername().toUpperCase()), x + 66, y + 12, 0xFFFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Signed in - launcher account"), x + 66, y + 30, 0xFF9AA1B2);
-
-        int badgeWidth = 58;
-        int badgeX = x + width - badgeWidth - 18;
-        int badgeY = y + 17;
-        PremiumRender.roundedRect(context, badgeX, badgeY, badgeWidth, 20, 6, 0x662E5BFF);
-        PremiumRender.outline(context, badgeX, badgeY, badgeWidth, 20, 6, theme.accentColor());
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Active"), badgeX + badgeWidth / 2, badgeY + 6, 0xFFBFD0FF);
+    private void renderAvatar(DrawContext context, int x, int y, int bg) {
+        PremiumRender.roundedRect(context, x, y, 40, 40, 0, bg);
+        context.fill(x + 5, y + 5, x + 35, y + 35, 0xFFE4B48D);
+        context.fill(x + 5, y + 5, x + 35, y + 15, 0xFF5B3524);
+        context.fill(x + 11, y + 21, x + 16, y + 26, 0xFF191919);
+        context.fill(x + 24, y + 21, x + 29, y + 26, 0xFF191919);
     }
 
-    private void renderLoginInfo(DrawContext context) {
-        int x = rowX();
-        int y = rowY() + 68;
-        int width = rowWidth();
-        int height = Math.max(70, footerY() - y - 42);
-        ClientTheme theme = ThemeManager.theme();
-        PremiumRender.card(context, x, y, width, height, 2, 0xB610131C, theme.borderColor());
-        PremiumRender.roundedRect(context, x, y, 3, height, 2, theme.accentColor());
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Secure browser login"), x + 18, y + 16, 0xFFFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("S9Lab never stores passwords or Microsoft/Minecraft tokens."), x + 18, y + 34, 0xFF9AA1B2);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Use the browser page and then relaunch with your launcher account."), x + 18, y + 50, 0xFF687083);
+    private void renderBadge(DrawContext context, int x, int y, int width, int height, String label, int accent) {
+        PremiumRender.roundedRect(context, x, y, width, height, 0, 0x662E5BFF);
+        PremiumRender.outline(context, x, y, width, height, 0, accent);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), x + width / 2, y + 6, 0xFFBFD0FF);
     }
 
-    private void renderAvatar(DrawContext context, int x, int y) {
-        PremiumRender.roundedRect(context, x, y, 40, 40, 8, 0xFF111111);
-        context.fill(x + 3, y + 3, x + 37, y + 37, 0xFFE4B48D);
-        context.fill(x + 3, y + 3, x + 37, y + 13, 0xFF5B3524);
-        context.fill(x + 9, y + 20, x + 15, y + 26, 0xFF191919);
-        context.fill(x + 25, y + 20, x + 31, y + 26, 0xFF191919);
-        context.fill(x + 16, y + 31, x + 24, y + 34, 0xFFB97868);
-    }
-
-    private void renderFooter(DrawContext context, Session session, int mouseX, int mouseY) {
-        int y = footerY();
-        int refreshX = refreshX();
-        int addX = addX();
-        int refreshWidth = refreshWidth();
-        int addWidth = addWidth();
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Launcher-controlled session"), windowX() + 30, y + 12, 0xFF9AA1B2);
-        renderActionButton(context, refreshX, refreshY(), refreshWidth, 34, "Refresh", inside(mouseX, mouseY, refreshX, refreshY(), refreshWidth, 34));
-        renderActionButton(context, addX, addY(), addWidth, 34, "Browser Login", inside(mouseX, mouseY, addX, addY(), addWidth, 34));
-
-        String mode = MinecraftClient.getInstance().isInSingleplayer() ? "Singleplayer" : "Menu";
-        context.drawTextWithShadow(this.textRenderer, Text.literal(statusMessage), windowX() + 30, y - 31, 0xFF9AA1B2);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Current: " + session.getUsername() + " | " + mode), windowX() + 30, y - 15, 0xFF6F7C91);
-    }
-
-    private void renderActionButton(DrawContext context, int x, int y, int width, int height, String label, boolean hovered) {
-        ClientTheme theme = ThemeManager.theme();
-        PremiumRender.card(context, x, y, width, height, 2, hovered ? 0xD91A2030 : 0xB9141822, hovered ? theme.accentColor() : theme.borderColor());
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label), x + width / 2, y + 12, hovered ? 0xFFFFFFFF : 0xFFD9E2FF);
+    private void renderActionButton(DrawContext context, int x, int y, int width, int height, String label, boolean hovered, int accent) {
+        PremiumRender.card(context, x, y, width, height, 0, hovered ? PremiumRender.SHOP_BUTTON_HOVER : PremiumRender.SHOP_BUTTON, hovered ? accent : PremiumRender.SHOP_SOFT_BORDER);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, label, width - 8)), x + width / 2, y + (height - 8) / 2, hovered ? 0xFFFFFFFF : 0xFFD9E2FF);
     }
 
     private int windowWidth() {
@@ -181,12 +180,16 @@ public class SafeAccountScreen extends ResponsiveScreen {
         return windowX() + padding();
     }
 
-    private int rowY() {
-        return windowY() + (windowHeight() < 270 ? 72 : 84);
-    }
-
     private int rowWidth() {
         return windowWidth() - padding() * 2;
+    }
+
+    private int listY() {
+        return windowY() + 76;
+    }
+
+    private int listH() {
+        return Math.max(80, windowHeight() - 144);
     }
 
     private int closeX() {
@@ -194,51 +197,23 @@ public class SafeAccountScreen extends ResponsiveScreen {
     }
 
     private int closeY() {
-        return windowY() + 30;
+        return windowY() + 18;
     }
 
-    private int footerY() {
-        return windowY() + windowHeight() - (windowWidth() < 430 ? 112 : 70);
+    private int actionY() {
+        return windowY() + windowHeight() - 40;
     }
 
-    private int refreshY() {
-        return footerY() + (windowWidth() < 430 ? 28 : 0);
+    private int loginX() {
+        return windowX() + windowWidth() - padding() - loginW();
     }
 
-    private int addY() {
-        return footerY() + (windowWidth() < 430 ? 66 : 0);
-    }
-
-    private int refreshX() {
-        if (windowWidth() < 430) {
-            return rowX();
-        }
-        return addX() - 12 - refreshWidth();
-    }
-
-    private int addX() {
-        if (windowWidth() < 430) {
-            return rowX();
-        }
-        return windowX() + windowWidth() - padding() - addWidth();
-    }
-
-    private int refreshWidth() {
-        if (windowWidth() < 430) {
-            return rowWidth();
-        }
-        return Math.max(88, Math.min(150, windowWidth() / 5));
-    }
-
-    private int addWidth() {
-        if (windowWidth() < 430) {
-            return rowWidth();
-        }
-        return Math.max(130, Math.min(230, windowWidth() - padding() * 2 - 12 - refreshWidth()));
+    private int loginW() {
+        return Math.min(210, Math.max(150, rowWidth() / 3));
     }
 
     private int padding() {
-        return Math.max(10, centeredLayout(760, 430, 260, 220).padding() + (windowWidth() < 430 ? 4 : 12));
+        return Math.max(12, centeredLayout(760, 430, 260, 220).padding() + 8);
     }
 
     private static boolean inside(int mouseX, int mouseY, int x, int y, int width, int height) {

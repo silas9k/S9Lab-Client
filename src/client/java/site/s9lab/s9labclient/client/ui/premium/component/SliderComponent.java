@@ -35,7 +35,9 @@ public class SliderComponent extends Component {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hovered = contains(mouseX, mouseY);
         float hover = animations.animate(id + ".hover", hovered || dragging, deltaTicks);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), ClientTheme.mix(theme.cardColor(), theme.cardHoverColor(), hover), theme.borderColor());
+        PremiumRender.card(context, x, y, width, height, 0,
+                ClientTheme.mix(PremiumRender.SHOP_CARD, PremiumRender.SHOP_CARD_HOVER, hover),
+                hovered || dragging ? ClientTheme.withAlpha(theme.accentColor(), 180) : PremiumRender.SHOP_SOFT_BORDER);
 
         double value = clamp(getter.getAsDouble());
         String valueText = String.format("%.0f", value);
@@ -46,10 +48,10 @@ public class SliderComponent extends Component {
         int ty = y + 24;
         int tw = width - LABEL_PADDING * 2;
         float progress = (float) ((value - min) / (max - min));
-        PremiumRender.roundedRect(context, tx, ty, tw, TRACK_HEIGHT, TRACK_HEIGHT / 2, 0xFF2C3142);
-        PremiumRender.roundedRect(context, tx, ty, Math.round(tw * progress), TRACK_HEIGHT, TRACK_HEIGHT / 2, theme.accentColor());
+        PremiumRender.roundedRect(context, tx, ty, tw, TRACK_HEIGHT, 0, 0xFF2C3142);
+        PremiumRender.roundedRect(context, tx, ty, Math.round(tw * progress), TRACK_HEIGHT, 0, theme.accentColor());
         int knobX = tx + Math.round(tw * progress) - KNOB_SIZE / 2;
-        PremiumRender.roundedRect(context, knobX, ty - 3, KNOB_SIZE, KNOB_SIZE, KNOB_SIZE / 2, 0xFFFFFFFF);
+        PremiumRender.roundedRect(context, knobX, ty - 3, KNOB_SIZE, KNOB_SIZE, 0, 0xFFFFFFFF);
     }
 
     @Override

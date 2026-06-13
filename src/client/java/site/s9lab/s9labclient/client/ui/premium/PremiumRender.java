@@ -8,26 +8,69 @@ import site.s9lab.s9labclient.client.ui.premium.theme.ClientTheme;
 public final class PremiumRender {
     public static final int SHADOW_OFFSET = 1;
     public static final int MIN_RADIUS = 0;
+    public static final int SHOP_GLASS = 0x66DDEBFF;
+    public static final int SHOP_HEADER = 0xF0121316;
+    public static final int SHOP_FOOTER = 0xF0121316;
+    public static final int SHOP_BORDER = 0x88FFFFFF;
+    public static final int SHOP_SOFT_BORDER = 0x44FFFFFF;
+    public static final int SHOP_CARD = 0x24FFFFFF;
+    public static final int SHOP_CARD_HOVER = 0x40364A66;
+    public static final int SHOP_CARD_ACTIVE = 0x4A2E66C8;
+    public static final int SHOP_BUTTON = 0xFF17191D;
+    public static final int SHOP_BUTTON_HOVER = 0xFF25282E;
+    public static final int SHOP_BUTTON_ACTIVE = 0xFF202736;
+    public static final int SHOP_INPUT = 0xEF07080A;
 
     private PremiumRender() {
     }
 
     public static void overlay(DrawContext context, ClientTheme theme) {
-        int width = context.getScaledWindowWidth();
-        int height = context.getScaledWindowHeight();
         if (theme.darkOverlay()) {
-            context.fill(0, 0, width, height, theme.blurBackground() ? theme.backgroundColor() : 0xA8070810);
-            if (theme.blurBackground()) {
-                context.fill(0, 0, width, height / 2, 0x221B2A55);
-                context.fill(0, height - 110, width, height, 0x77000000);
-            }
+            shopBackdrop(context);
         }
     }
 
     public static void card(DrawContext context, int x, int y, int width, int height, int radius, int color, int borderColor) {
-        shadow(context, x, y, width, height, radius);
-        roundedRect(context, x, y, width, height, radius, color);
-        outline(context, x, y, width, height, radius, borderColor);
+        shadow(context, x, y, width, height, 0);
+        roundedRect(context, x, y, width, height, 0, color);
+        outline(context, x, y, width, height, 0, borderColor);
+    }
+
+    public static void shopBackdrop(DrawContext context) {
+        int width = context.getScaledWindowWidth();
+        int height = context.getScaledWindowHeight();
+        context.fill(0, 0, width, height, 0x16000000);
+        context.fill(0, 0, width, Math.max(1, height / 2), 0x22D8E8FF);
+        context.fill(0, Math.max(0, height - 96), width, height, 0x44000000);
+    }
+
+    public static void shopPanel(DrawContext context, int x, int y, int width, int height, int topbarHeight, int footerHeight) {
+        shadow(context, x, y, width, height, 0);
+        context.fill(x, y, x + width, y + height, SHOP_GLASS);
+        outline(context, x, y, width, height, 0, SHOP_BORDER);
+        if (topbarHeight > 0) {
+            context.fill(x, y, x + width, y + Math.min(height, topbarHeight), SHOP_HEADER);
+            context.fill(x, y + Math.min(height, topbarHeight) - 1, x + width, y + Math.min(height, topbarHeight), SHOP_SOFT_BORDER);
+        }
+        if (footerHeight > 0) {
+            int footerY = Math.max(y, y + height - footerHeight);
+            context.fill(x, footerY, x + width, y + height, SHOP_FOOTER);
+            context.fill(x, footerY, x + width, footerY + 1, SHOP_SOFT_BORDER);
+        }
+    }
+
+    public static void shopButton(DrawContext context, Text text, int x, int y, int width, int height, boolean active, boolean hovered, int accentColor) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        int background = active ? SHOP_BUTTON_ACTIVE : hovered ? SHOP_BUTTON_HOVER : SHOP_BUTTON;
+        int border = active ? accentColor : hovered ? 0xAAFFFFFF : 0x667A7F88;
+        context.fill(x, y, x + width, y + height, background);
+        outline(context, x, y, width, height, 0, border);
+        centeredText(context, text, x + width / 2, y + (height - client.textRenderer.fontHeight) / 2, active ? accentColor : 0xFFE7EAF2);
+    }
+
+    public static void shopInput(DrawContext context, int x, int y, int width, int height, boolean focused, int accentColor) {
+        context.fill(x, y, x + width, y + height, SHOP_INPUT);
+        outline(context, x, y, width, height, 0, focused ? accentColor : 0xAA7A7F88);
     }
 
     public static void roundedRect(DrawContext context, int x, int y, int width, int height, int radius, int color) {

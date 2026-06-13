@@ -120,7 +120,7 @@ public final class ApiServer {
         String route = path.substring(apiRoot.length());
 
         if (method.equals("POST") && route.equals("/handshake")) {
-            Dtos.HandshakeRequest request = Json.read(exchange, Dtos.HandshakeRequest.class);
+            Dtos.HandshakeRequest request = requireBody(Json.read(exchange, Dtos.HandshakeRequest.class));
             Dtos.ProfileResponse response = profiles.handshake(request);
             if (webSocketServer != null) {
                 webSocketServer.broadcastState("PlayerStatusUpdate", response.uuid(), response.equippedCosmetics(), response.activeEmote(), true);
@@ -131,7 +131,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/heartbeat")) {
-            Dtos.HeartbeatRequest request = Json.read(exchange, Dtos.HeartbeatRequest.class);
+            Dtos.HeartbeatRequest request = requireBody(Json.read(exchange, Dtos.HeartbeatRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -160,7 +160,7 @@ public final class ApiServer {
             if (uuid == null) {
                 return;
             }
-            Dtos.SettingsRequest request = Json.read(exchange, Dtos.SettingsRequest.class);
+            Dtos.SettingsRequest request = requireBody(Json.read(exchange, Dtos.SettingsRequest.class));
             if (request.uuid() != null && !request.uuid().isBlank() && !requireUuid(request.uuid()).equals(uuid)) {
                 throw new IllegalArgumentException("uuid_mismatch");
             }
@@ -183,10 +183,11 @@ public final class ApiServer {
                 return;
             }
             Dtos.NotificationReadRequest request = Json.read(exchange, Dtos.NotificationReadRequest.class);
-            if (request.uuid() != null && !request.uuid().isBlank() && !requireUuid(request.uuid()).equals(uuid)) {
+            String requestedUuid = request == null ? null : request.uuid();
+            if (requestedUuid != null && !requestedUuid.isBlank() && !requireUuid(requestedUuid).equals(uuid)) {
                 throw new IllegalArgumentException("uuid_mismatch");
             }
-            int markedRead = database.markNotificationsRead(uuid, request.notificationIds());
+            int markedRead = database.markNotificationsRead(uuid, request == null ? List.of() : request.notificationIds());
             Json.send(exchange, 200, new Dtos.NotificationReadResponse(true, markedRead));
             return;
         }
@@ -212,7 +213,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/shop/buy")) {
-            Dtos.CosmeticRequest request = Json.read(exchange, Dtos.CosmeticRequest.class);
+            Dtos.CosmeticRequest request = requireBody(Json.read(exchange, Dtos.CosmeticRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -228,7 +229,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/cosmetics/gift")) {
-            Dtos.GiftRequest request = Json.read(exchange, Dtos.GiftRequest.class);
+            Dtos.GiftRequest request = requireBody(Json.read(exchange, Dtos.GiftRequest.class));
             String senderUuid = requireUuid(request.senderUuid());
             if (!requireClientSession(exchange, senderUuid)) {
                 return;
@@ -252,7 +253,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/cosmetics/equip")) {
-            Dtos.CosmeticRequest request = Json.read(exchange, Dtos.CosmeticRequest.class);
+            Dtos.CosmeticRequest request = requireBody(Json.read(exchange, Dtos.CosmeticRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -269,7 +270,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/cosmetics/unequip")) {
-            Dtos.CosmeticRequest request = Json.read(exchange, Dtos.CosmeticRequest.class);
+            Dtos.CosmeticRequest request = requireBody(Json.read(exchange, Dtos.CosmeticRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -285,7 +286,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/emotes/start")) {
-            Dtos.EmoteRequest request = Json.read(exchange, Dtos.EmoteRequest.class);
+            Dtos.EmoteRequest request = requireBody(Json.read(exchange, Dtos.EmoteRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -301,7 +302,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && route.equals("/emotes/stop")) {
-            Dtos.EmoteRequest request = Json.read(exchange, Dtos.EmoteRequest.class);
+            Dtos.EmoteRequest request = requireBody(Json.read(exchange, Dtos.EmoteRequest.class));
             String uuid = requireUuid(request.uuid());
             if (!requireClientSession(exchange, uuid)) {
                 return;
@@ -332,7 +333,7 @@ public final class ApiServer {
         }
 
         if (method.equals("POST") && List.of("/admin/coins/set", "/admin/coins/add", "/admin/coins/remove").contains(path)) {
-            Dtos.CoinRequest request = Json.read(exchange, Dtos.CoinRequest.class);
+            Dtos.CoinRequest request = requireBody(Json.read(exchange, Dtos.CoinRequest.class));
             String uuid = requireUuid(request.uuid());
             long amount = requireCoinAmount(request.amount());
             switch (path) {
@@ -398,6 +399,13 @@ public final class ApiServer {
             throw new IllegalArgumentException(error);
         }
         return value.trim();
+    }
+
+    private static <T> T requireBody(T request) {
+        if (request == null) {
+            throw new IllegalArgumentException("missing_body");
+        }
+        return request;
     }
 
     private static String requireCosmeticType(String value) {

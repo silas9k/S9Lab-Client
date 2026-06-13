@@ -26,10 +26,13 @@ public class CardComponent extends Component {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hovered = contains(mouseX, mouseY);
         float hover = animations.animate(id + ".hover", hovered, deltaTicks);
-        int color = ClientTheme.mix(theme.cardColor(), theme.cardHoverColor(), hover);
-        int border = ClientTheme.mix(theme.borderColor(), ClientTheme.withAlpha(theme.accentColor(), 160), hover);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), color, border);
-        PremiumRender.roundedRect(context, x + 9, y + 11, 34, 34, theme.radius(), ClientTheme.withAlpha(theme.accentColor(), 80));
+        int color = ClientTheme.mix(0x661B2230, 0x88364A66, hover);
+        int border = ClientTheme.mix(0x66FFFFFF, ClientTheme.withAlpha(theme.accentColor(), 220), hover);
+        context.fill(x + 1, y + 2, x + width + 1, y + height + 2, 0x66000000);
+        context.fill(x, y, x + width, y + height, color);
+        PremiumRender.outline(context, x, y, width, height, 0, border);
+        context.fill(x + 9, y + 11, x + 43, y + 45, ClientTheme.withAlpha(theme.accentColor(), 80));
+        PremiumRender.outline(context, x + 9, y + 11, 34, 34, 0, ClientTheme.withAlpha(theme.accentColor(), 160));
         context.drawTextWithShadow(client.textRenderer, Text.literal("*"), x + 23, y + 22, theme.textColor());
         context.drawTextWithShadow(client.textRenderer, title, x + 54, y + 13, theme.textColor());
         context.drawTextWithShadow(client.textRenderer, description, x + 54, y + 31, theme.mutedTextColor());

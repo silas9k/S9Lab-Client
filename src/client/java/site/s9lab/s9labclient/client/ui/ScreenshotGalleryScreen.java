@@ -55,13 +55,10 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         ensureResponsiveLayout();
         ClientTheme theme = ThemeManager.theme();
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x77000000);
+        PremiumRender.shopBackdrop(context);
 
         Layout layout = layout();
-        context.fill(layout.x + 3, layout.y + 3, layout.x + layout.width + 3, layout.y + layout.height + 3, 0x77000000);
-        PremiumRender.roundedRect(context, layout.x, layout.y, layout.width, layout.height, 2, 0xE914161A);
-        PremiumRender.outline(context, layout.x, layout.y, layout.width, layout.height, 2, 0xFF2D3138);
-        context.fill(layout.x, layout.y, layout.x + layout.width, layout.y + 48, 0xDD1A1C21);
+        PremiumRender.shopPanel(context, layout.x, layout.y, layout.width, layout.height, 48, 0);
         drawHeader(context, layout, theme);
         drawSearch(context, layout.searchX(), layout.searchY(), layout.searchW, mouseX, mouseY);
 
@@ -203,7 +200,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
         context.drawTextWithShadow(this.textRenderer, Text.literal("Browse, search, preview and share your captures"), layout.x + layout.pad, layout.y + 30, theme.mutedTextColor());
         int pillX = layout.x + layout.pad;
         int pillY = layout.y + 47;
-        PremiumRender.card(context, pillX, pillY, 108, 17, 2, 0x66141B2A, 0x667CFFB2);
+        PremiumRender.card(context, pillX, pillY, 108, 17, 0, PremiumRender.SHOP_BUTTON, 0x667CFFB2);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("PNG previews"), pillX + 54, pillY + 5, theme.accentColor());
     }
 
@@ -211,14 +208,14 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
         ClientTheme theme = ThemeManager.theme();
         boolean hovered = inside(mouseX, mouseY, x, y, width, height);
         int border = hovered ? theme.accentColor() : 0x662C3344;
-        int background = hovered ? 0xD91A2030 : 0xB9141822;
-        PremiumRender.card(context, x, y, width, height, 2, background, border);
+        int background = hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD;
+        PremiumRender.card(context, x, y, width, height, 0, background, border);
 
         int imageX = x + 8;
         int imageY = y + 8;
         int imageW = width - 16;
         int imageH = 68;
-        PremiumRender.roundedRect(context, imageX, imageY, imageW, imageH, 2, 0xFF070A10);
+        PremiumRender.roundedRect(context, imageX, imageY, imageW, imageH, 0, 0xFF070A10);
         drawPreviewImage(context, metadata, imageX + 2, imageY + 2, imageW - 4, imageH - 4, false);
         if (hovered) {
             context.fill(imageX, imageY + imageH - 15, imageX + imageW, imageY + imageH, 0xAA000000);
@@ -285,7 +282,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
     private void drawSearch(DrawContext context, int x, int y, int width, int mouseX, int mouseY) {
         ClientTheme theme = ThemeManager.theme();
         boolean active = searchFocused || inside(mouseX, mouseY, x, y, width, 24);
-        PremiumRender.card(context, x, y, width, 24, 2, 0xB9141822, active ? theme.accentColor() : 0x662C3344);
+        PremiumRender.shopInput(context, x, y, width, 24, active, theme.accentColor());
         String value = search.isBlank() && !searchFocused ? "Search screenshots..." : search + (searchFocused && System.currentTimeMillis() / 450L % 2L == 0L ? "_" : "");
         context.drawTextWithShadow(this.textRenderer, Text.literal(value), x + 9, y + 8, search.isBlank() && !searchFocused ? theme.mutedTextColor() : theme.textColor());
     }
@@ -302,7 +299,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
         int boxW = Math.min(310, this.width - 60);
         int boxX = (this.width - boxW) / 2;
         int boxY = gridY + gridH / 2 - 38;
-        PremiumRender.card(context, boxX, boxY, boxW, 76, 2, 0xAA0A0D15, 0x662C3344);
+        PremiumRender.card(context, boxX, boxY, boxW, 76, 0, PremiumRender.SHOP_CARD, PremiumRender.SHOP_SOFT_BORDER);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("No screenshots found"), this.width / 2, boxY + 17, theme.textColor());
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Press F2 in game, then reopen this gallery."), this.width / 2, boxY + 36, theme.mutedTextColor());
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Search filters file, server, world and date."), this.width / 2, boxY + 52, theme.mutedTextColor());
@@ -316,7 +313,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
         int modalH = modal.height();
         int x = (this.width - modalW) / 2;
         int y = (this.height - modalH) / 2;
-        PremiumRender.card(context, x, y, modalW, modalH, 2, 0xE914161A, theme.accentColor());
+        PremiumRender.shopPanel(context, x, y, modalW, modalH, 48, 0);
 
         context.drawTextWithShadow(this.textRenderer, Text.literal("§l" + trim(preview.fileName(), Math.max(18, (modalW - 90) / 6))), x + 18, y + 16, theme.textColor());
         context.drawTextWithShadow(this.textRenderer, Text.literal(preview.server() + "  •  " + fullDate(preview)), x + 18, y + 32, theme.mutedTextColor());
@@ -326,7 +323,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
         int previewY = y + 56;
         int previewW = modalW - 36;
         int previewH = Math.max(72, modalH - 170);
-        PremiumRender.card(context, previewX, previewY, previewW, previewH, 2, 0xFF070A10, 0x662C3344);
+        PremiumRender.card(context, previewX, previewY, previewW, previewH, 0, 0xFF070A10, 0x662C3344);
         drawPreviewImage(context, preview, previewX + 3, previewY + 3, previewW - 6, previewH - 6, true);
 
         int metaY = previewY + previewH + 10;
@@ -386,7 +383,7 @@ public class ScreenshotGalleryScreen extends ResponsiveScreen {
 
     private void drawSmallButton(DrawContext context, int x, int y, int width, int height, String label, boolean hovered) {
         ClientTheme theme = ThemeManager.theme();
-        PremiumRender.card(context, x, y, width, height, 2, hovered ? 0xD91A2030 : 0xB9141822, hovered ? theme.accentColor() : 0x662C3344);
+        PremiumRender.card(context, x, y, width, height, 0, hovered ? PremiumRender.SHOP_BUTTON_HOVER : PremiumRender.SHOP_BUTTON, hovered ? theme.accentColor() : 0x662C3344);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label), x + width / 2, y + (height - 8) / 2, theme.textColor());
     }
 

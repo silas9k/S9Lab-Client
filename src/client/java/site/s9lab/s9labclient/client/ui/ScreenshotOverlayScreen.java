@@ -49,7 +49,7 @@ public class ScreenshotOverlayScreen extends ResponsiveScreen {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         ensureResponsiveLayout();
         ClientTheme theme = ThemeManager.theme();
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x77000000);
+        PremiumRender.shopBackdrop(context);
 
         Panel panel = panel();
         int panelW = panel.width();
@@ -57,17 +57,14 @@ public class ScreenshotOverlayScreen extends ResponsiveScreen {
         int x = panel.x();
         int y = panel.y();
 
-        context.fill(x + 3, y + 3, x + panelW + 3, y + panelH + 3, 0x77000000);
-        PremiumRender.roundedRect(context, x, y, panelW, panelH, 2, 0xE914161A);
-        PremiumRender.outline(context, x, y, panelW, panelH, 2, 0xFF2D3138);
-        context.fill(x, y, x + panelW, y + 58, 0xDD1A1C21);
+        PremiumRender.shopPanel(context, x, y, panelW, panelH, 58, 0);
         drawHeader(context, x, y, panelW, theme);
 
         int previewX = x + 18;
         int previewY = y + 72;
         int previewW = panelW - 36;
         int previewH = Math.max(78, panelH - 162);
-        PremiumRender.card(context, previewX, previewY, previewW, previewH, 2, 0xFF070A10, 0x662C3344);
+        PremiumRender.card(context, previewX, previewY, previewW, previewH, 0, 0xFF070A10, 0x662C3344);
         renderPreview(context, previewX + 3, previewY + 3, previewW - 6, previewH - 6);
 
         int buttonY = y + panelH - 72;
@@ -80,7 +77,7 @@ public class ScreenshotOverlayScreen extends ResponsiveScreen {
         drawButton(context, x + 18 + (buttonW + gap) * (columns == 2 ? 1 : 3), buttonY + (columns == 2 ? 32 : 0), buttonW, 24, "Delete", mouseX, mouseY);
 
         int pillW = Math.min(panelW - 36, Math.max(120, this.textRenderer.getWidth(status) + 18));
-        PremiumRender.card(context, x + 18, y + panelH - 23, pillW, 17, 2, 0x66141B2A, 0x667CFFB2);
+        PremiumRender.card(context, x + 18, y + panelH - 23, pillW, 17, 0, PremiumRender.SHOP_BUTTON, 0x667CFFB2);
         context.drawTextWithShadow(this.textRenderer, Text.literal(status), x + 27, y + panelH - 18, theme.mutedTextColor());
         super.render(context, mouseX, mouseY, deltaTicks);
     }
@@ -140,7 +137,7 @@ public class ScreenshotOverlayScreen extends ResponsiveScreen {
         context.drawTextWithShadow(this.textRenderer, Text.literal(trim(metadata.fileName(), Math.max(18, (panelW - 36) / 6))), x + 18, y + 32, theme.mutedTextColor());
         int badgeY = y + 51;
         int serverW = Math.min(panelW - 36, this.textRenderer.getWidth(metadata.server()) + 20);
-        PremiumRender.card(context, x + 18, badgeY, serverW, 17, 2, 0x66141B2A, 0x667CFFB2);
+        PremiumRender.card(context, x + 18, badgeY, serverW, 17, 0, PremiumRender.SHOP_BUTTON, 0x667CFFB2);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(metadata.server()), x + 18 + serverW / 2, badgeY + 5, theme.accentColor());
         context.drawTextWithShadow(this.textRenderer, Text.literal(metadata.resolution()), x + panelW - 18 - this.textRenderer.getWidth(metadata.resolution()), badgeY + 5, theme.mutedTextColor());
     }
@@ -192,7 +189,7 @@ public class ScreenshotOverlayScreen extends ResponsiveScreen {
     private void drawButton(DrawContext context, int x, int y, int width, int height, String label, int mouseX, int mouseY) {
         ClientTheme theme = ThemeManager.theme();
         boolean hovered = inside(mouseX, mouseY, x, y, width, height);
-        PremiumRender.card(context, x, y, width, height, 2, hovered ? 0xD91A2030 : 0xB9141822, hovered ? theme.accentColor() : 0x662C3344);
+        PremiumRender.card(context, x, y, width, height, 0, hovered ? PremiumRender.SHOP_BUTTON_HOVER : PremiumRender.SHOP_BUTTON, hovered ? theme.accentColor() : 0x662C3344);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label), x + width / 2, y + 8, theme.textColor());
     }
 

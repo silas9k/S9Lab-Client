@@ -25,6 +25,8 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import site.s9lab.s9labclient.S9LabClient;
+import site.s9lab.s9labclient.client.ui.premium.PremiumRender;
+import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
 
 /**
  * In-game Discord share screen.
@@ -219,7 +221,7 @@ public class DiscordShareScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         // Minecraft 1.21.11: do not call renderBackground() here.
         // It can trigger a second blur in the same frame via Fabric Screen API.
-        context.fill(0, 0, width, height, 0x99000000);
+        PremiumRender.shopBackdrop(context);
 
         int cx = width / 2;
         int cy = height / 2;
@@ -228,17 +230,12 @@ public class DiscordShareScreen extends Screen {
         int px = cx - panelW / 2;
         int py = cy - panelH / 2;
 
-        // Panel background — dark slate with subtle purple tint (Discord brand nod)
-        context.fill(px, py, px + panelW, py + panelH, 0xF0161B25);
-        // Top accent bar (Discord blurple)
-        context.fill(px, py, px + panelW, py + 4, 0xFF5865F2);
-        // Border
-        drawBorder(context, px, py, panelW, panelH, 0xFF5865F2);
+        PremiumRender.shopPanel(context, px, py, panelW, panelH, 36, 0);
 
         // Title
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("§9§l⬡ §r§bShare on Discord"),
-                cx, py + 10, 0xFFFFFF);
+                Text.literal("SHARE ON DISCORD"),
+                cx, py + 11, ThemeManager.theme().textColor());
 
         if (currentView == View.TARGET_LIST) {
             renderListView(context, mouseX, mouseY, delta, px, py, panelW, panelH);
@@ -280,9 +277,9 @@ public class DiscordShareScreen extends Screen {
             boolean hovered  = mx >= px + 4 && mx <= px + panelW - 68 && my >= ry && my <= ry + ROW_H - 2;
             boolean selected = i == selectedIndex;
 
-            int rowBg = selected ? 0xFF3D3F8F : (hovered ? 0xFF2A2D3E : 0xFF1E2130);
+            int rowBg = selected ? PremiumRender.SHOP_CARD_ACTIVE : (hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD);
             ctx.fill(px + 4, ry, px + panelW - 68, ry + ROW_H - 2, rowBg);
-            if (selected) drawBorder(ctx, px + 4, ry, panelW - 72, ROW_H - 2, 0xFF5865F2);
+            if (selected) drawBorder(ctx, px + 4, ry, panelW - 72, ROW_H - 2, ThemeManager.theme().accentColor());
 
             // Discord icon placeholder (blurple square)
             ctx.fill(px + 10, ry + 7, px + 22, ry + 19, 0xFF5865F2);

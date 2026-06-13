@@ -33,7 +33,9 @@ public class DropdownComponent extends Component {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks, ClientTheme theme, AnimationManager animations) {
         MinecraftClient client = MinecraftClient.getInstance();
         float hover = animations.animate(id + ".hover", contains(mouseX, mouseY), deltaTicks);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), ClientTheme.mix(theme.cardColor(), theme.cardHoverColor(), hover), theme.borderColor());
+        PremiumRender.card(context, x, y, width, height, 0,
+                ClientTheme.mix(PremiumRender.SHOP_CARD, PremiumRender.SHOP_CARD_HOVER, hover),
+                open ? ClientTheme.withAlpha(theme.accentColor(), 190) : PremiumRender.SHOP_SOFT_BORDER);
         context.drawTextWithShadow(client.textRenderer, label, x + LABEL_PADDING, y + (height - client.textRenderer.fontHeight) / 2, theme.textColor());
 
         String selected = getter.get();
@@ -74,12 +76,12 @@ public class DropdownComponent extends Component {
     private void renderOptions(DrawContext context, int mouseX, int mouseY, ClientTheme theme) {
         MinecraftClient client = MinecraftClient.getInstance();
         int panelY = y + height + 4;
-        PremiumRender.card(context, x, panelY, width, options.size() * OPTION_HEIGHT, theme.radius(), theme.panelColor(), theme.borderColor());
+        PremiumRender.card(context, x, panelY, width, options.size() * OPTION_HEIGHT, 0, PremiumRender.SHOP_HEADER, PremiumRender.SHOP_SOFT_BORDER);
         for (int i = 0; i < options.size(); i++) {
             int oy = panelY + i * OPTION_HEIGHT;
             boolean hovered = PremiumRender.inside(mouseX, mouseY, x, oy, width, OPTION_HEIGHT);
             if (hovered) {
-                PremiumRender.roundedRect(context, x + 3, oy + 2, width - 6, OPTION_HEIGHT - 4, theme.radius() - 2, ClientTheme.withAlpha(theme.accentColor(), 70));
+                PremiumRender.roundedRect(context, x + 3, oy + 2, width - 6, OPTION_HEIGHT - 4, 0, ClientTheme.withAlpha(theme.accentColor(), 70));
             }
             context.drawTextWithShadow(client.textRenderer, Text.literal(options.get(i)), x + LABEL_PADDING, oy + 7, theme.textColor());
         }

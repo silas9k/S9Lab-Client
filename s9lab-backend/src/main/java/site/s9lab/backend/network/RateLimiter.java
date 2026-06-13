@@ -13,6 +13,9 @@ public final class RateLimiter {
 
     public boolean allow(String key) {
         long minute = System.currentTimeMillis() / 60_000L;
+        if (windows.size() > 2048) {
+            windows.entrySet().removeIf(entry -> entry.getValue().minute < minute - 2L);
+        }
         Window window = windows.compute(key, (ignored, old) -> {
             if (old == null || old.minute != minute) {
                 return new Window(minute, 1);

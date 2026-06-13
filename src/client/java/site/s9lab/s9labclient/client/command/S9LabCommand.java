@@ -67,7 +67,7 @@ public final class S9LabCommand {
                                 .then(ClientCommandManager.argument("file", StringArgumentType.word())
                                         .suggests((context, builder) -> CommandSource.suggestMatching(screenshotTargets(), builder))
                                         .executes(context -> screenshotAction(context, "delete")))))
-                .then(ClientCommandManager.literal("shop").executes(context -> openClientTab(context, S9LabClientScreen.ClientTab.COSMETICS)))
+                .then(ClientCommandManager.literal("shop").executes(context -> openClientTab(context, S9LabClientScreen.ClientTab.SHOP)))
                 .then(ClientCommandManager.literal("cosmetics").executes(context -> openClientTab(context, S9LabClientScreen.ClientTab.COSMETICS)))
                 .then(ClientCommandManager.literal("accounts").executes(S9LabCommand::openAccounts))
                 .then(ClientCommandManager.literal("login").executes(S9LabCommand::openLogin))
@@ -190,8 +190,8 @@ public final class S9LabCommand {
     }
 
     private static int openLogin(CommandContext<FabricClientCommandSource> context) {
-        AccountLoginHelper.openBrowserLogin();
-        feedback(context, "Opened Minecraft login in your browser. Restart or relaunch through your launcher after switching accounts.");
+        AccountLoginHelper.beginMicrosoftLogin();
+        feedback(context, "Started Microsoft browser login. Open /s9c accounts to see the status.");
         return 1;
     }
 

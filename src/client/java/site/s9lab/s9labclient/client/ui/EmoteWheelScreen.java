@@ -41,16 +41,13 @@ public class EmoteWheelScreen extends ResponsiveScreen {
         ClientTheme theme = ThemeManager.theme();
         int accent = theme.accentColor();
 
-        context.fill(0, 0, width, height, 0x8A000000);
+        PremiumRender.shopBackdrop(context);
         int panelW = Math.min(520, Math.max(300, width - 60));
         int panelH = Math.min(330, Math.max(230, height - 60));
         int x = (width - panelW) / 2;
         int y = (height - panelH) / 2;
 
-        context.fill(x + 4, y + 4, x + panelW + 4, y + panelH + 4, 0x66000000);
-        PremiumRender.roundedRect(context, x, y, panelW, panelH, 3, PANEL);
-        PremiumRender.outline(context, x, y, panelW, panelH, 3, 0xFF2B313D);
-        context.fill(x, y, x + panelW, y + 44, 0xD91A1D24);
+        PremiumRender.shopPanel(context, x, y, panelW, panelH, 44, 0);
 
         context.drawTextWithShadow(textRenderer, Text.literal("EMOTE WHEEL"), x + 18, y + 14, WHITE);
         String right = bindingSlot >= 0 ? "bind slot " + (bindingSlot + 1) : "4 slots";
@@ -66,8 +63,8 @@ public class EmoteWheelScreen extends ResponsiveScreen {
         }
 
         boolean stopHovered = inside(mouseX, mouseY, centerX - 42, centerY - 28, 84, 56);
-        PremiumRender.roundedRect(context, centerX - 42, centerY - 28, 84, 56, 3, stopHovered ? 0xFF24151C : 0xEE0D1017);
-        PremiumRender.outline(context, centerX - 42, centerY - 28, 84, 56, 3, stopHovered ? 0xFFFF5A67 : LINE);
+        PremiumRender.roundedRect(context, centerX - 42, centerY - 28, 84, 56, 0, stopHovered ? 0xFF24151C : PremiumRender.SHOP_BUTTON);
+        PremiumRender.outline(context, centerX - 42, centerY - 28, 84, 56, 0, stopHovered ? 0xFFFF5A67 : LINE);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("STOP"), centerX, centerY - 8, stopHovered ? 0xFFFF9CA3 : WHITE);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("active"), centerX, centerY + 8, DIM);
 
@@ -154,8 +151,8 @@ public class EmoteWheelScreen extends ResponsiveScreen {
         boolean valid = emote != null && EmoteManager.isBindable(emote);
         boolean active = valid && emote == EmoteManager.activeEmote();
 
-        PremiumRender.roundedRect(context, x, y, slotW, slotH, 3, hovered ? CARD_HOVER : CARD);
-        PremiumRender.outline(context, x, y, slotW, slotH, 3, active ? 0xFF49F26F : hovered ? accent : LINE);
+        PremiumRender.roundedRect(context, x, y, slotW, slotH, 0, hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD);
+        PremiumRender.outline(context, x, y, slotW, slotH, 0, active ? 0xFF49F26F : hovered ? accent : PremiumRender.SHOP_SOFT_BORDER);
 
         if (!valid) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), x + slotW / 2, y + 9, accent);
@@ -174,8 +171,7 @@ public class EmoteWheelScreen extends ResponsiveScreen {
         int x = panelX + (panelW - w) / 2;
         int y = panelY + (panelH - h) / 2;
         context.fill(panelX, panelY + 44, panelX + panelW, panelY + panelH, 0xAA000000);
-        PremiumRender.roundedRect(context, x, y, w, h, 3, 0xFA101319);
-        PremiumRender.outline(context, x, y, w, h, 3, accent);
+        PremiumRender.shopPanel(context, x, y, w, h, 28, 0);
         context.drawTextWithShadow(textRenderer, Text.literal("Bind Slot " + (bindingSlot + 1)), x + 12, y + 10, WHITE);
 
         int rowY = y + 34;
@@ -183,14 +179,14 @@ public class EmoteWheelScreen extends ResponsiveScreen {
         for (int i = 0; i < emotes.size(); i++) {
             Emote emote = emotes.get(i);
             boolean hovered = inside(mouseX, mouseY, x + 10, rowY, w - 20, 22);
-            PremiumRender.roundedRect(context, x + 10, rowY, w - 20, 22, 2, hovered ? 0xFF202738 : 0xFF151923);
+            PremiumRender.roundedRect(context, x + 10, rowY, w - 20, 22, 0, hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD);
             context.fill(x + 18, rowY + 6, x + 28, rowY + 16, emote.accentColor());
             context.drawTextWithShadow(textRenderer, Text.literal(emote.displayName()), x + 36, rowY + 7, hovered ? WHITE : TEXT);
             rowY += 26;
         }
 
         boolean clearHovered = inside(mouseX, mouseY, x + 10, y + h - 30, w - 20, 20);
-        PremiumRender.roundedRect(context, x + 10, y + h - 30, w - 20, 20, 2, clearHovered ? 0xFF2A1820 : 0xFF151923);
+        PremiumRender.roundedRect(context, x + 10, y + h - 30, w - 20, 20, 0, clearHovered ? 0xFF2A1820 : PremiumRender.SHOP_BUTTON);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Clear Slot"), x + w / 2, y + h - 24, clearHovered ? 0xFFFF9CA3 : MUTED);
     }
 

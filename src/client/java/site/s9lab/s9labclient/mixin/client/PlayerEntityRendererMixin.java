@@ -10,6 +10,7 @@ import net.minecraft.client.render.entity.feature.FeatureRendererContext;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.entity.PlayerLikeEntity;
+import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -81,43 +82,65 @@ public abstract class PlayerEntityRendererMixin {
     ) {
         UUID uuid = player.getUuid();
         CosmeticResolver.remember(state.id, uuid);
-        if (S9LabClientClient.getModuleManager() == null || !isBadgeEnabled() || state.playerName == null) {
+        if (!shouldRenderBadge(uuid, state)) {
             return;
         }
+
+        if (state.playerName != null) {
+            state.playerName = withBadgeOnce(state.playerName);
+        }
+        if (state.displayName != null) {
+            state.displayName = withBadgeOnce(state.displayName);
+        }
+    }
+
+    @Inject(
+            method = "scale(Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V",
+            at = @At("TAIL")
+    )
+    private void s9labclient$scaleBigHead(
+            PlayerEntityRenderState state,
+            MatrixStack matrices,
+            CallbackInfo ci
+    ) {
         MinecraftClient client = MinecraftClient.getInstance();
-        UUID ownUuid = client.getSession() == null ? null : client.getSession().getUuidOrNull();
-        if ((ownUuid == null || !ownUuid.equals(uuid)) && !BackendState.isS9Player(uuid)) {
+
+        if (client.player == null || state.id != client.player.getId()) {
             return;
         }
-        state.playerName = S9BadgeText.withBadge(state.playerName);
+
+        if (EmoteManager.activeEmote() != Emote.BIG_HEAD) {
+            return;
+        }
+
+        matrices.translate(0.0F, 4.00F, 0.0F);
+        matrices.scale(4.0F, 4.0F, 4.0F);
     }
 
-@Inject(
-        method = "scale(Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V",
-        at = @At("TAIL")
-)
-private void s9labclient$scaleBigHead(
-        PlayerEntityRenderState state,
-        MatrixStack matrices,
-        CallbackInfo ci
-) {
-    MinecraftClient client = MinecraftClient.getInstance();
-
-    if (client.player == null || state.id != client.player.getId()) {
-        return;
+    private static boolean isBadgeEnabled() {
+        Module module = S9LabClientClient.getModuleManager().getModule("Tablist Badge").orElse(null);
+        return module != null && module.isEnabled();
     }
 
-    if (EmoteManager.activeEmote() != Emote.BIG_HEAD) {
-        return;
+    private static boolean shouldRenderBadge(UUID uuid, PlayerEntityRenderState state) {
+        if (S9LabClientClient.getModuleManager() == null || !isBadgeEnabled()) {
+            return false;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null && state.id == client.player.getId()) {
+            return true;
+        }
+
+        UUID ownUuid = client.getSession() == null ? null : client.getSession().getUuidOrNull();
+        return (ownUuid != null && ownUuid.equals(uuid)) || BackendState.isS9Player(uuid);
     }
 
-    matrices.translate(0.0F, 4.00F, 0.0F);
-    matrices.scale(4.0F, 4.0F, 4.0F);
-}
-
-private static boolean isBadgeEnabled() {
-    Module module = S9LabClientClient.getModuleManager().getModule("Tablist Badge").orElse(null);
-    return module != null && module.isEnabled();
-}
+    private static Text withBadgeOnce(Text text) {
+        if (text.getString().startsWith("\uE000")) {
+            return text;
+        }
+        return S9BadgeText.withBadge(text);
+    }
 
 }

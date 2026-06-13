@@ -7,13 +7,18 @@ import site.s9lab.s9labclient.client.module.impl.render.ZoomModule;
 public final class ZoomController {
     private static boolean zooming;
     private static float smoothedFov = -1.0F;
-    private static long lastScrollSaveMillis;
+    private static boolean pendingSave;
 
     private ZoomController() {
     }
 
     public static void setZooming(boolean zooming) {
+        boolean wasZooming = ZoomController.zooming;
         ZoomController.zooming = zooming;
+        if (wasZooming && !zooming) {
+            savePending();
+            smoothedFov = -1.0F;
+        }
     }
 
     public static boolean shouldZoom() {
@@ -41,12 +46,16 @@ public final class ZoomController {
             return false;
         }
         module.adjustFov(verticalAmount);
-        long now = System.currentTimeMillis();
-        if (S9LabClientClient.getConfigManager() != null && now - lastScrollSaveMillis > 300L) {
-            lastScrollSaveMillis = now;
-            S9LabClientClient.getConfigManager().save();
-        }
+        pendingSave = true;
         return true;
+    }
+
+    private static void savePending() {
+        if (!pendingSave || S9LabClientClient.getConfigManager() == null) {
+            return;
+        }
+        pendingSave = false;
+        S9LabClientClient.getConfigManager().save();
     }
 
     private static ZoomModule getModule() {

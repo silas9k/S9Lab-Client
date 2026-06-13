@@ -1,8 +1,10 @@
 package site.s9lab.s9labclient.client.ui;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.Click;
@@ -11,12 +13,9 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.input.CharInput;
 import net.minecraft.client.input.KeyInput;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.StyleSpriteSource;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
-import site.s9lab.s9labclient.S9LabClient;
 import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.backend.BackendClient;
 import site.s9lab.s9labclient.client.backend.BackendState;
@@ -34,10 +33,11 @@ import site.s9lab.s9labclient.client.module.setting.Setting;
 import site.s9lab.s9labclient.client.ui.premium.PremiumRender;
 import site.s9lab.s9labclient.client.ui.premium.theme.ClientTheme;
 import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
-import site.s9lab.s9labclient.client.util.S9BadgeText;
 
 public class S9LabClientScreen extends ResponsiveScreen {
-    private static final Identifier CLIENT_ICON = Identifier.of(S9LabClient.MOD_ID, "icon.png");
+    private static final Identifier CLIENT_ICON =
+            Identifier.of("s9labclient", "textures/font/s9_icon.png");
+    private static final Map<Identifier, Boolean> MODULE_ICON_CACHE = new HashMap<>();
     private static final int BG = 0xF005070D;
     private static final int PANEL = 0xD90A0D14;
     private static final int PANEL_2 = 0xB610131C;
@@ -64,6 +64,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private int dragOffsetY;
     private int scroll;
     private int cosmeticSideScroll;
+    private boolean showAllCosmetics;
+    private boolean showAllModules;
+    private boolean moduleDetailsOpen;
+    private boolean cosmeticDetailsOpen;
     private boolean previewDragging;
     private float previewYaw = 180.0F;
     private float previewPitch = 8.0F;
@@ -102,19 +106,24 @@ public class S9LabClientScreen extends ResponsiveScreen {
         ClientTheme theme = ThemeManager.theme();
         int accent = theme.accentColor();
 
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x66000000);
-        context.fill(layout.x + 3, layout.y + 3, layout.x + layout.width + 3, layout.y + layout.height + 3, 0x77000000);
-        rect(context, layout.x, layout.y, layout.width, layout.height, 2, 0xE914161A);
-        context.fill(layout.x, layout.y, layout.x + layout.width, layout.y + layout.headerHeight, 0xDD1A1C21);
-        outline(context, layout.x, layout.y, layout.width, layout.height, 2, 0xFF2D3138);
+        if (isShopLike()) {
+            renderShopBackdrop(context);
+            renderCosmetics(context, layout, mouseX, mouseY, accent);
+            if (giftDialogOpen) {
+                renderGiftDialog(context, layout, mouseX, mouseY, accent);
+            }
+            super.render(context, mouseX, mouseY, deltaTicks);
+            return;
+        }
 
-        renderHeader(context, layout, mouseX, mouseY, accent);
+        renderShopBackdrop(context);
+        renderClientShell(context, layout, mouseX, mouseY, accent);
         renderNotificationBanner(context, layout, mouseX, mouseY, accent);
         switch (selectedTab) {
-            case MODS -> renderMods(context, layout, mouseX, mouseY, accent);
+            case MODS -> renderModsCatalog(context, layout, mouseX, mouseY, accent);
             case COSMETICS -> renderCosmetics(context, layout, mouseX, mouseY, accent);
             case SHOP -> renderCosmetics(context, layout, mouseX, mouseY, accent);
-            case SETTINGS -> renderSettingsPage(context, layout, mouseX, mouseY, accent);
+            case SETTINGS -> renderSettingsCatalog(context, layout, mouseX, mouseY, accent);
         }
         if (giftDialogOpen) {
             renderGiftDialog(context, layout, mouseX, mouseY, accent);
@@ -138,17 +147,20 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (handleNotificationBannerClick(layout, mouseX, mouseY)) {
             return true;
         }
-        if (handleHeaderClick(layout, mouseX, mouseY)) {
+        if (handleFooterTabsClick(layout, mouseX, mouseY)) {
+            return true;
+        }
+        if (!isShopLike() && handleClientShellClick(layout, mouseX, mouseY)) {
             return true;
         }
         if (handleHudDragStart(mouseX, mouseY)) {
             return true;
         }
         boolean handled = switch (selectedTab) {
-            case MODS -> handleModsClick(layout, mouseX, mouseY);
+            case MODS -> handleModsCatalogClick(layout, mouseX, mouseY);
             case COSMETICS -> handleCosmeticClick(layout, mouseX, mouseY);
             case SHOP -> handleCosmeticClick(layout, mouseX, mouseY);
-            case SETTINGS -> handleSettingsPageClick(layout, mouseX, mouseY);
+            case SETTINGS -> handleSettingsCatalogClick(layout, mouseX, mouseY);
         };
         if (handled) {
             return true;
@@ -161,7 +173,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
     public boolean mouseDragged(Click click, double offsetX, double offsetY) {
         if (previewDragging) {
             previewYaw += (float) offsetX * 1.9F;
-            previewPitch = clamp(Math.round(previewPitch - (float) offsetY * 1.2F), -35, 45);
+            previewPitch = clamp(Math.round(previewPitch - (float) offsetY * 1.2F), -80, 80);
             return true;
         }
         if (draggingModule != null) {
@@ -192,13 +204,14 @@ public class S9LabClientScreen extends ResponsiveScreen {
             previewZoom = clamp(previewZoom + (int) Math.round(verticalAmount * 7.0D), 42, 140);
             return true;
         }
-        if (selectedTab == ClientTab.COSMETICS || selectedTab == ClientTab.SHOP) {
-            int sideX = layout.x + 26;
-            int sideY = layout.bodyY() + 18;
-            int sideW = 132;
-            int panelH = layout.y + layout.height - sideY - 24;
-            if (inside(mouseX, mouseY, sideX, sideY, sideW, panelH)) {
-                cosmeticSideScroll = ResponsiveLayout.scroll(cosmeticSideScroll, verticalAmount, maxCosmeticSideScroll(panelH));
+        if (isShopLike()) {
+            CosmeticLayout parts = cosmeticLayout(layout);
+            if (inside(mouseX, mouseY, parts.sideX, parts.contentY, parts.sideW, parts.contentH)) {
+                cosmeticSideScroll = ResponsiveLayout.scroll(cosmeticSideScroll, verticalAmount, maxCosmeticSideScroll(parts.contentH));
+                return true;
+            }
+            if (inside(mouseX, mouseY, parts.gridX, parts.gridY, parts.gridW, parts.gridH)) {
+                scroll = ResponsiveLayout.scroll(scroll, verticalAmount, maxScroll(layout));
                 return true;
             }
         }
@@ -240,6 +253,12 @@ public class S9LabClientScreen extends ResponsiveScreen {
             }
         }
         if (input.isEscape()) {
+            if (moduleDetailsOpen || cosmeticDetailsOpen) {
+                moduleDetailsOpen = false;
+                cosmeticDetailsOpen = false;
+                previewDragging = false;
+                return true;
+            }
             if (searchFocused) {
                 searchFocused = false;
                 return true;
@@ -281,36 +300,60 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     public static void renderDarkBackground(DrawContext context) {
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x66000000);
+        PremiumRender.shopBackdrop(context);
+    }
+
+    private void renderShopBackdrop(DrawContext context) {
+        PremiumRender.shopBackdrop(context);
+    }
+
+    private boolean isShopLike() {
+        return selectedTab == ClientTab.COSMETICS || selectedTab == ClientTab.SHOP;
+    }
+
+    private String shopTitle() {
+        return showAllCosmetics ? "COSMETICS" : cosmeticMenuLabel(selectedCosmeticType).toUpperCase(Locale.ROOT);
     }
 
     private void renderHeader(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
         int y = layout.y + 14;
         int logoX = layout.x + 22;
-        rect(context, logoX, y + 1, 26, 26, 7, 0x77101420);
-        outline(context, logoX, y + 1, 26, 26, 7, ClientTheme.withAlpha(accent, 150));
-        context.drawTexture(RenderPipelines.GUI_TEXTURED, CLIENT_ICON, logoX + 4, y + 5, 0.0F, 0.0F, 18, 18, 1254, 1254);
-        context.drawTextWithShadow(textRenderer, Text.literal("S9Lab"), logoX + 34, y + 3, WHITE);
-        context.drawTextWithShadow(textRenderer, Text.literal("Client"), logoX + 34, y + 15, ClientTheme.withAlpha(accent, 210));
 
-        int tabX = layout.x + layout.width / 2 - 118;
+        context.drawTexture(
+                RenderPipelines.GUI_TEXTURED,
+                CLIENT_ICON,
+                layout.x + 5,
+                layout.y + 16,
+                2.0F,
+                2.0F,
+                16,
+                16,
+                256,
+                256,
+                256,
+                256
+        );
+
+        context.drawTextWithShadow(textRenderer, Text.literal("S9Lab"), logoX, y + 2, WHITE);
+        context.drawTextWithShadow(textRenderer, Text.literal("Client"), logoX, y + 14, ClientTheme.withAlpha(accent, 210));
+
+        int tabX = tabStartX(layout);
         for (ClientTab tab : visibleTabs()) {
-            int w = tab == ClientTab.COSMETICS ? 82 : 70;
+            int w = tabWidth(tab);
             boolean active = tab == selectedTab;
             boolean hovered = inside(mouseX, mouseY, tabX, y, w, 24);
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(tab.label), tabX + w / 2, y + 7, active ? accent : hovered ? WHITE : MUTED);
             if (active) {
                 context.fill(tabX + 10, y + 26, tabX + w - 10, y + 28, accent);
             }
-            tabX += w + 18;
+            tabX += w + 12;
         }
 
-        int coinsBoxW = 116;
+        int coinsBoxW = 92;
         int coinsBoxX = layout.x + layout.width - coinsBoxW - 28;
-        // rect(context, coinsBoxX, y + 1, coinsBoxW, 20, 4, 0x66101520);
-        outline(context, coinsBoxX, y + 1, coinsBoxW, 20, 2, BackendState.online() ? ClientTheme.withAlpha(accent, 210) : 0xFF3A3D45);
-        // rect(context, coinsBoxX + 8, y + 5, 10, 10, 5, BackendState.online() ? 0xFF2EE86B : 0xFFB94848);
-        context.drawTextWithShadow(textRenderer, Text.literal(BackendState.coins() + " coins"), coinsBoxX + 24, y + 7, WHITE);
+        rect(context, coinsBoxX, y + 1, coinsBoxW, 20, 4, 0x66101520);
+        outline(context, coinsBoxX, y + 1, coinsBoxW, 20, 4, 0xFF3A3D45);
+        context.drawTextWithShadow(textRenderer, Text.literal(String.valueOf(BackendState.coins())), coinsBoxX + 10, y + 7, WHITE);
 
         context.fill(layout.x + 14, layout.y + layout.headerHeight - 1, layout.x + layout.width - 14, layout.y + layout.headerHeight, 0xFF25282E);
     }
@@ -381,6 +424,238 @@ public class S9LabClientScreen extends ResponsiveScreen {
         context.disableScissor();
     }
 
+    private void renderClientShell(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        PremiumRender.shopPanel(context, parts.x, parts.y, parts.width, parts.height, parts.topbarH, parts.footerH);
+        renderClientTopbar(context, parts, mouseX, mouseY, accent);
+        renderFooterTabs(context, parts, mouseX, mouseY, accent);
+        context.fill(parts.gridX - 1, parts.contentY, parts.gridX, parts.y + parts.height - parts.footerH, 0x66FFFFFF);
+        if (parts.preview.width > 0) {
+            context.fill(parts.preview.x - 1, parts.contentY, parts.preview.x, parts.y + parts.height - parts.footerH, 0x66FFFFFF);
+        }
+    }
+
+    private void renderClientTopbar(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        int buttonY = parts.y + 11;
+        int buttonH = Math.max(18, Math.min(24, parts.topbarH - 18));
+        int x = parts.x + 8;
+        String primary = selectedTab == ClientTab.MODS ? titleCase(selectedCategory.name()).toUpperCase(Locale.ROOT) : "SETTINGS";
+        renderSquareButton(context, x, buttonY, 116, buttonH, primary, !showAllModules, mouseX, mouseY, accent);
+        x += 124;
+        renderSquareButton(context, x, buttonY, 58, buttonH, "ALL", showAllModules, mouseX, mouseY, accent);
+        x += 66;
+        int searchW = Math.max(110, Math.min(220, parts.x + parts.width - x - Math.max(98, parts.width / 8) - 34));
+        renderShopSearch(context, x, buttonY, searchW, buttonH, mouseX, mouseY, accent);
+
+        int coinsW = Math.max(78, Math.min(120, parts.width / 8));
+        int coinsX = parts.x + parts.width - coinsW - 12;
+        rect(context, coinsX, buttonY - 3, coinsW, buttonH + 6, 0, 0xFF357FB8);
+        outline(context, coinsX, buttonY - 3, coinsW, buttonH + 6, 0, 0xFF65B9F2);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(BackendState.coins() + " COINS"), coinsX + coinsW / 2, buttonY + (buttonH - 8) / 2, WHITE);
+    }
+
+    private void renderFooterTabs(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        if (parts.footerH < 28) {
+            return;
+        }
+        int buttonH = Math.min(24, parts.footerH - 12);
+        int y = parts.y + parts.height - parts.footerH + (parts.footerH - buttonH) / 2;
+        int gap = 8;
+        int[] widths = new int[] {70, 86, 96, 86};
+        int total = widths[0] + widths[1] + widths[2] + widths[3] + gap * 3;
+        int x = parts.x + Math.max(8, (parts.width - total) / 2);
+        ClientTab[] tabs = visibleTabs();
+        for (int i = 0; i < tabs.length; i++) {
+            ClientTab tab = tabs[i];
+            renderSquareButton(context, x, y, widths[i], buttonH, tab.label.toUpperCase(Locale.ROOT), selectedTab == tab, mouseX, mouseY, accent);
+            x += widths[i] + gap;
+        }
+    }
+
+    private void renderModsCatalog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        if (moduleDetailsOpen && selectedModule != null) {
+            renderModuleDetails(context, parts, mouseX, mouseY, accent);
+            return;
+        }
+        renderModuleSidebar(context, parts, mouseX, mouseY, accent);
+        context.drawTextWithShadow(textRenderer, Text.literal(showAllModules ? "ALL MODULES" : titleCase(selectedCategory.name()).toUpperCase(Locale.ROOT)), parts.gridX, parts.contentY + 12, WHITE);
+        context.fill(parts.gridX + 2, parts.contentY + 36, parts.gridX + parts.gridW - 4, parts.contentY + 37, 0x44FFFFFF);
+
+        context.enableScissor(parts.gridX, parts.gridY, parts.gridX + parts.gridW, parts.gridY + parts.gridH);
+        Grid grid = grid(parts.gridW, parts.gridH, 136, 116, 4);
+        List<Module> modules = filteredModules();
+        int baseY = parts.gridY - scroll;
+        for (int i = 0; i < modules.size(); i++) {
+            Module module = modules.get(i);
+            int cardX = parts.gridX + (i % grid.columns) * (grid.cardW + grid.gap);
+            int cardY = baseY + (i / grid.columns) * (grid.cardH + grid.gap);
+            if (cardY + grid.cardH < parts.gridY || cardY > parts.gridY + parts.gridH) continue;
+            renderModuleCard(context, module, cardX, cardY, grid.cardW, grid.cardH, mouseX, mouseY, accent);
+        }
+        context.disableScissor();
+
+        if (parts.preview.width > 0) {
+            renderModulePreviewPanel(context, parts.preview.x, parts.preview.y, parts.preview.width, parts.preview.height, mouseX, mouseY, accent);
+        }
+    }
+
+    private void renderSettingsCatalog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        Module module = selectedModule;
+        if (module == null) {
+            List<Module> modules = filteredModules();
+            if (!modules.isEmpty()) {
+                module = modules.get(0);
+                selectedModule = module;
+            }
+        }
+        if (module != null) {
+            renderModuleDetails(context, parts, mouseX, mouseY, accent);
+            return;
+        }
+        renderModuleSidebar(context, parts, mouseX, mouseY, accent);
+        context.drawTextWithShadow(textRenderer, Text.literal(module == null ? "SETTINGS" : module.getName().toUpperCase(Locale.ROOT)), parts.gridX, parts.contentY + 12, WHITE);
+        context.fill(parts.gridX + 2, parts.contentY + 36, parts.gridX + parts.gridW - 4, parts.contentY + 37, 0x44FFFFFF);
+
+        int editorY = parts.gridY;
+        boolean editorHovered = inside(mouseX, mouseY, parts.gridX, editorY, Math.min(180, parts.gridW), 28);
+        renderSquareButton(context, parts.gridX, editorY, Math.min(180, parts.gridW), 28, "OPEN HUD EDITOR", false, mouseX, mouseY, accent);
+        if (module == null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Select a module"), parts.gridX + parts.gridW / 2, editorY + 58, MUTED);
+            return;
+        }
+        int rowY = editorY + 46;
+        int colW = parts.gridW < 360 ? parts.gridW : (parts.gridW - 28) / 2;
+        renderSettingsLine(context, parts.gridX, rowY, colW, "Enabled", module.isEnabled() ? "ON" : "OFF", module.isEnabled(), mouseX, mouseY, accent);
+        rowY += 36;
+        int i = 0;
+        for (Setting<?> setting : module.getSettings()) {
+            int col = parts.gridW < 360 ? 0 : i % 2;
+            int row = parts.gridW < 360 ? i : i / 2;
+            int sx = parts.gridX + col * (colW + 28);
+            int sy = rowY + row * 36;
+            if (sy > parts.gridY + parts.gridH - 28) {
+                break;
+            }
+            renderSettingsLine(context, sx, sy, colW, setting.getName(), settingValue(setting), settingActive(setting), mouseX, mouseY, accent);
+            i++;
+        }
+
+        if (parts.preview.width > 0) {
+            renderModulePreviewPanel(context, parts.preview.x, parts.preview.y, parts.preview.width, parts.preview.height, mouseX, mouseY, accent);
+        }
+    }
+
+    private void renderModuleDetails(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        Module module = selectedModule;
+        if (module == null) {
+            return;
+        }
+        int x = parts.sideX + 10;
+        int y = parts.contentY + 12;
+        int width = parts.width - 20;
+        int bottom = parts.y + parts.height - parts.footerH - 12;
+        int height = Math.max(1, bottom - y);
+        context.fill(x, y, x + width, y + height, 0x17343A44);
+        outline(context, x, y, width, height, 0, 0x44FFFFFF);
+
+        String title = "< " + module.getName().toUpperCase(Locale.ROOT);
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, title, width - 270)), x + 14, y + 17, WHITE);
+
+        int topButtonY = y + 10;
+        int resetW = 72;
+        int onW = 54;
+        int resetX = x + width - resetW - 62;
+        int onX = resetX - onW - 10;
+        renderSquareButton(context, onX, topButtonY, onW, 28, module.isEnabled() ? "ON" : "OFF", module.isEnabled(), mouseX, mouseY, accent);
+        renderSquareButton(context, resetX, topButtonY, resetW, 28, "RESET", false, mouseX, mouseY, accent);
+        renderSquareButton(context, resetX + resetW + 10, topButtonY, 34, 28, "R", false, mouseX, mouseY, accent);
+
+        context.fill(x, y + 58, x + width, y + 59, 0x332A2E35);
+        int rowY = y + 78;
+        rowY = renderModuleDetailSection(context, "KEYBIND", x + 18, rowY, width - 36);
+        KeybindSetting keybind = keybindSetting(module);
+        renderModuleDetailRow(context, x + 34, rowY, width - 68, keybind == null ? "Key" : keybind.getName(), keybind == null ? "Not Bound" : keybindValue(keybind), false, mouseX, mouseY, accent);
+        rowY += 48;
+        rowY = renderModuleDetailSection(context, "SETTINGS", x + 18, rowY, width - 36);
+        if (module.getSettings().isEmpty()) {
+            context.drawTextWithShadow(textRenderer, Text.literal("No settings for this module."), x + 34, rowY + 10, MUTED);
+            return;
+        }
+        for (Setting<?> setting : module.getSettings()) {
+            if (setting instanceof KeybindSetting) {
+                continue;
+            }
+            if (rowY > bottom - 34) {
+                break;
+            }
+            renderModuleDetailRow(context, x + 34, rowY, width - 68, setting.getName(), settingValue(setting), setting instanceof BooleanSetting, mouseX, mouseY, accent);
+            rowY += 36;
+        }
+    }
+
+    private int renderModuleDetailSection(DrawContext context, String label, int x, int y, int width) {
+        context.drawTextWithShadow(textRenderer, Text.literal("- " + label + " -"), x, y, DIM);
+        context.fill(x + 92, y + 5, x + width, y + 6, 0x33384255);
+        return y + 22;
+    }
+
+    private void renderModuleDetailRow(DrawContext context, int x, int y, int width, String label, String value, boolean checkbox, int mouseX, int mouseY, int accent) {
+        context.drawTextWithShadow(textRenderer, Text.literal(label.toUpperCase(Locale.ROOT)), x, y + 10, WHITE);
+        if (checkbox) {
+            boolean enabled = "true".equalsIgnoreCase(value);
+            int bx = x + width - 28;
+            int by = y + 7;
+            context.fill(bx, by, bx + 16, by + 16, enabled ? ClientTheme.withAlpha(accent, 150) : 0x55252C38);
+            outline(context, bx, by, 16, 16, 0, enabled ? accent : 0x668A93A6);
+            if (enabled) {
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal("✓"), bx + 8, by + 3, WHITE);
+            }
+        } else {
+            int buttonW = Math.min(132, Math.max(80, textRenderer.getWidth(value) + 22));
+            int bx = x + width - buttonW;
+            renderSquareButton(context, bx, y + 4, buttonW, 24, value, false, mouseX, mouseY, accent);
+        }
+        context.fill(x, y + 34, x + width, y + 35, 0x332A2E35);
+    }
+
+    private void renderModuleSidebar(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        int itemY = parts.contentY + 6;
+        int rowH = Math.max(18, Math.min(27, parts.height / 15));
+        for (ModuleCategory category : ModuleCategory.values()) {
+            boolean active = !showAllModules && category == selectedCategory;
+            String label = titleCase(category.name()).toUpperCase(Locale.ROOT);
+            if (active) {
+                context.fill(parts.sideX + 2, itemY + 2, parts.sideX + 5, itemY + rowH - 3, accent);
+                context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x222F65C8);
+            }
+            if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x22FFFFFF);
+            }
+            context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, label, parts.sideW - 18)), parts.sideX + 12, itemY + (rowH - 8) / 2, active ? accent : WHITE);
+            itemY += rowH + 5;
+        }
+    }
+
+    private void renderModulePreviewPanel(DrawContext context, int x, int y, int width, int height, int mouseX, int mouseY, int accent) {
+        Module module = selectedModule;
+        context.fill(x, y, x + width, y + height, 0x1EFFFFFF);
+        outline(context, x, y, width, height, 0, 0x44FFFFFF);
+        String title = module == null ? "EMPTY" : TextLayout.ellipsize(textRenderer, module.getName().toUpperCase(Locale.ROOT), width - 18);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(title), x + width / 2, y + 24, WHITE);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(module == null ? "SELECT MODULE" : titleCase(module.getCategory().name())), x + width / 2, y + 10, MUTED);
+        if (module == null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Click a module card"), x + width / 2, y + height / 2, DIM);
+            return;
+        }
+        renderModuleIcon(context, module, x + width / 2, y + Math.max(82, height / 2 - 12), accent);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, module.getDescription(), width - 24)), x + width / 2, y + height - 72, MUTED);
+        int buttonY = y + height - 46;
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(module.isEnabled() ? "ENABLED" : "DISABLED"), x + width / 2, buttonY + 1, module.isEnabled() ? WHITE : MUTED);
+        renderMiniSwitch(context, x + width / 2 - 13, buttonY + 15, module.isEnabled(), accent);
+    }
+
 
 
     private void renderLeftShell(DrawContext context, int x, int y, int width, int height, int mouseX, int mouseY, int accent, boolean modules) {
@@ -433,31 +708,143 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private void renderModuleCard(DrawContext context, Module module, int x, int y, int width, int height, int mouseX, int mouseY, int accent) {
         boolean hovered = inside(mouseX, mouseY, x, y, width, height);
         boolean selected = module == selectedModule;
-        int header = module.isEnabled() ? ClientTheme.withAlpha(accent, 120) : 0xFF30333A;
-        rect(context, x, y, width, height, 2, hovered ? 0xE224272D : 0xD91B1E24);
-        outline(context, x, y, width, height, 2, selected ? accent : hovered ? 0xFF4A4E58 : 0xFF30343C);
-        context.fill(x, y, x + width, y + 22, header);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, module.getName().toUpperCase(Locale.ROOT), width - 8)), x + width / 2, y + 7, WHITE);
-        renderModuleIcon(context, module, x + width / 2, y + 47, accent);
-        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, module.getDescription(), width - 12)), x + 6, y + height - 16, DIM);
+        int fill = selected ? ClientTheme.withAlpha(accent, 55) : hovered ? PremiumRender.SHOP_CARD_HOVER : PremiumRender.SHOP_CARD;
+        rect(context, x, y, width, height, 0, fill);
+        outline(context, x, y, width, height, 0, selected ? accent : hovered ? 0xCCFFFFFF : 0x66FFFFFF);
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, module.getName().toUpperCase(Locale.ROOT), width - 10)), x + 6, y + 7, WHITE);
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, module.getDescription(), width - 42)), x + 6, y + height - 18, DIM);
+        
+
+        renderModuleIcon(context, module, x + width / 2, y + height / 2 - 4, accent);
+            
+
+        renderCardDetailButton(context, x + width - 28, y + 5, inside(mouseX, mouseY, x + width - 28, y + 5, 22, 22), accent);
         renderMiniSwitch(context, x + width - 34, y + height - 18, module.isEnabled(), accent);
+    }
+
+    private void renderCardDetailButton(DrawContext context, int x, int y, boolean hovered, int accent) {
+        context.fill(x, y, x + 22, y + 22, hovered ? 0x66416886 : 0x44313A4E);
+        outline(context, x, y, 22, 22, 0, hovered ? accent : 0x884F6CCF);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("..."), x + 11, y + 6, hovered ? WHITE : MUTED);
+    }
+
+    private void renderModuleDetailEmpty(DrawContext context, int x, int y, int width, int height, int accent) {
+        rect(context, x, y, width, height, 14, 0x8A0B1019);
+        outline(context, x, y, width, height, 14, LINE_SOFT);
+        rect(context, x + width / 2 - 26, y + height / 2 - 38, 52, 52, 14, ClientTheme.withAlpha(accent, 70));
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("S9"), x + width / 2, y + height / 2 - 18, WHITE);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Select a module"), x + width / 2, y + height / 2 + 22, MUTED);
     }
 
 
 
     private void renderModuleIcon(DrawContext context, Module module, int cx, int cy, int accent) {
-        int color = module.isEnabled() ? accent : 0xFF8B92A0;
-        String initial = module.getName().isEmpty() ? "?" : module.getName().substring(0, 1).toUpperCase(Locale.ROOT);
-        if (module.getCategory() == ModuleCategory.HUD) {
-            outline(context, cx - 15, cy - 13, 30, 24, 2, color);
-            context.fill(cx - 10, cy + 5, cx + 10, cy + 7, ClientTheme.withAlpha(color, 160));
-        } else if (module.getCategory() == ModuleCategory.COSMETICS) {
-            outline(context, cx - 14, cy - 14, 28, 28, 2, color);
-        } else {
-            rect(context, cx - 14, cy - 14, 28, 28, 4, ClientTheme.withAlpha(color, 45));
-            outline(context, cx - 14, cy - 14, 28, 28, 4, color);
+        String iconName = module.getClass().getSimpleName()
+                .replaceAll("([a-z])([A-Z])", "$1_$2")
+                .toLowerCase(Locale.ROOT);
+
+        Identifier icon = Identifier.of(
+                "s9labclient",
+                "textures/gui/modules/" + iconName + ".png"
+        );
+
+        int size = Math.max(30, Math.min(40, Math.min(cx, cy) / 8));
+        int x = cx - size / 2;
+        int y = cy - size / 2;
+
+        try {
+            boolean hasIcon = MODULE_ICON_CACHE.computeIfAbsent(icon, id ->
+                    MinecraftClient.getInstance().getResourceManager().getResource(id).isPresent());
+            if (!hasIcon) {
+                renderGeneratedModuleIcon(context, module, cx, cy, accent);
+                return;
+            }
+            context.drawTexture(
+                    RenderPipelines.GUI_TEXTURED,
+                    icon,
+                    x,
+                    y,
+                    0.0F,
+                    0.0F,
+                    size,
+                    size,
+                    1024,
+                    1024,
+                    1024,
+                    1024
+            );
+        } catch (Exception ignored) {
+            renderGeneratedModuleIcon(context, module, cx, cy, accent);
         }
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(initial), cx, cy - 4, WHITE);
+    }
+
+    private void renderGeneratedModuleIcon(DrawContext context, Module module, int cx, int cy, int accent) {
+        int x = cx - 25;
+        int y = cy - 20;
+        rect(context, x, y, 50, 40, 6, 0x77212632);
+        outline(context, x, y, 50, 40, 6, ClientTheme.withAlpha(accent, 120));
+
+        String name = module.getName().toLowerCase(Locale.ROOT);
+        int soft = ClientTheme.withAlpha(accent, 185);
+        int bright = ClientTheme.withAlpha(accent, 245);
+        int ink = 0xFFEAF0FF;
+        if (name.contains("fps")) {
+            context.fill(cx - 13, cy + 7, cx - 8, cy + 12, soft);
+            context.fill(cx - 4, cy + 2, cx + 1, cy + 12, bright);
+            context.fill(cx + 5, cy - 5, cx + 10, cy + 12, 0xFFEAF0FF);
+        } else if (name.contains("coordinate") || name.contains("coords")) {
+            context.fill(cx - 13, cy, cx + 14, cy + 2, bright);
+            context.fill(cx, cy - 13, cx + 2, cy + 14, bright);
+            context.fill(cx + 8, cy - 9, cx + 12, cy - 5, ink);
+        } else if (name.contains("ping")) {
+            context.fill(cx - 13, cy + 8, cx - 9, cy + 12, soft);
+            context.fill(cx - 6, cy + 4, cx - 2, cy + 12, soft);
+            context.fill(cx + 1, cy, cx + 5, cy + 12, bright);
+            context.fill(cx + 8, cy - 5, cx + 12, cy + 12, ink);
+        } else if (name.contains("clock") || name.contains("date")) {
+            outline(context, cx - 11, cy - 11, 22, 22, 11, bright);
+            context.fill(cx, cy - 8, cx + 2, cy + 2, ink);
+            context.fill(cx, cy, cx + 8, cy + 2, ink);
+        } else if (name.contains("keystroke")) {
+            rect(context, cx - 5, cy - 14, 10, 10, 2, soft);
+            rect(context, cx - 17, cy - 2, 10, 10, 2, soft);
+            rect(context, cx - 5, cy - 2, 10, 10, 2, bright);
+            rect(context, cx + 7, cy - 2, 10, 10, 2, soft);
+        } else if (name.contains("zoom")) {
+            outline(context, cx - 11, cy - 11, 18, 18, 9, bright);
+            context.fill(cx + 5, cy + 6, cx + 15, cy + 9, ink);
+        } else if (name.contains("armor")) {
+            outline(context, cx - 10, cy - 13, 20, 24, 4, bright);
+            context.fill(cx - 7, cy - 3, cx + 8, cy, soft);
+        } else if (name.contains("cape")) {
+            rect(context, cx - 10, cy - 13, 20, 27, 4, bright);
+            context.fill(cx - 6, cy - 9, cx + 6, cy - 6, ink);
+        } else if (name.contains("bandana")) {
+            rect(context, cx - 15, cy - 5, 30, 9, 4, bright);
+            context.fill(cx + 6, cy + 3, cx + 16, cy + 9, soft);
+        } else if (name.contains("wing")) {
+            rect(context, cx - 17, cy - 8, 15, 20, 7, soft);
+            rect(context, cx + 2, cy - 8, 15, 20, 7, bright);
+            context.fill(cx - 10, cy - 2, cx + 10, cy + 1, ink);
+        } else if (name.contains("hat")) {
+            rect(context, cx - 10, cy - 12, 20, 15, 4, bright);
+            context.fill(cx - 16, cy + 3, cx + 17, cy + 7, ink);
+        } else if (name.contains("halo")) {
+            outline(context, cx - 15, cy - 12, 30, 10, 5, bright);
+            context.fill(cx - 3, cy + 1, cx + 4, cy + 13, ink);
+        } else if (name.contains("glint")) {
+            outline(context, cx - 10, cy - 10, 20, 20, 4, bright);
+            context.fill(cx - 2, cy - 13, cx + 3, cy + 14, soft);
+            context.fill(cx - 13, cy - 2, cx + 14, cy + 3, soft);
+        } else if (name.contains("music")) {
+            context.fill(cx - 8, cy - 12, cx - 4, cy + 9, bright);
+            context.fill(cx - 8, cy - 12, cx + 10, cy - 8, bright);
+            rect(context, cx - 15, cy + 6, 9, 7, 4, ink);
+            rect(context, cx + 5, cy + 4, 9, 7, 4, ink);
+        } else {
+            String label = module.getName().isBlank() ? "S9" : module.getName().substring(0, Math.min(2, module.getName().length())).toUpperCase(Locale.ROOT);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), cx, cy - 4, bright);
+        }
     }
 
     private void renderMiniSwitch(DrawContext context, int x, int y, boolean enabled, int accent) {
@@ -543,47 +930,172 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private void renderCosmetics(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
-        int sideX = layout.x + 26;
-        int sideY = layout.bodyY() + 18;
-        int sideW = 132;
-        int panelH = layout.y + layout.height - sideY - 24;
-        int previewW = Math.max(190, Math.min(235, layout.width / 4));
-        int previewX = layout.x + layout.width - previewW - 28;
-        int gridX = sideX + sideW + 18;
-        int searchY = sideY;
-        int searchH = 32;
-        int gridY = searchY + searchH + 16;
-        int gridW = previewX - gridX - 18;
-        int gridH = layout.y + layout.height - gridY - 24;
+        CosmeticLayout parts = cosmeticLayout(layout);
+        PremiumRender.shopPanel(context, parts.x, parts.y, parts.width, parts.height, parts.topbarH, parts.footerH);
 
-        renderLeftShell(context, sideX, sideY, sideW, panelH, mouseX, mouseY, accent, false);
-        renderSearch(context, gridX, searchY, gridW - 66, mouseX, mouseY, accent, "Search cosmetics...");
+        renderShopTopbar(context, parts, mouseX, mouseY, accent);
+        renderFooterTabs(context, parts, mouseX, mouseY, accent);
+        renderShopSidebar(context, parts, mouseX, mouseY, accent);
 
-        int sortX = gridX + gridW - 58;
-        rect(context, sortX, searchY + 6, 23, 20, 3, sortAscending ? ClientTheme.withAlpha(accent, 210) : 0xFF22262D);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("A↓"), sortX + 11, searchY + 12, sortAscending ? WHITE : MUTED);
-        rect(context, sortX + 28, searchY + 6, 23, 20, 3, !sortAscending ? ClientTheme.withAlpha(accent, 210) : 0xFF22262D);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Z↓"), sortX + 39, searchY + 12, !sortAscending ? WHITE : MUTED);
+        context.fill(parts.gridX - 1, parts.contentY, parts.gridX, parts.y + parts.height - parts.footerH, 0x66FFFFFF);
+        if (parts.preview.width > 0) {
+            context.fill(parts.preview.x - 1, parts.contentY, parts.preview.x, parts.y + parts.height - parts.footerH, 0x66FFFFFF);
+        }
 
-        context.enableScissor(gridX, gridY, gridX + gridW, gridY + gridH);
-        Grid grid = grid(gridW, gridH, 105, 112, 4);
+        if (cosmeticDetailsOpen && selectedCosmetic != null) {
+            renderCosmeticDetails(context, parts, mouseX, mouseY, accent);
+            return;
+        }
+
+        context.drawTextWithShadow(textRenderer, Text.literal(shopTitle()), parts.gridX, parts.contentY + 12, WHITE);
+        context.fill(parts.gridX + 2, parts.contentY + 36, parts.gridX + parts.gridW - 4, parts.contentY + 37, 0x44FFFFFF);
+
+        context.enableScissor(parts.gridX, parts.gridY, parts.gridX + parts.gridW, parts.gridY + parts.gridH);
+        Grid grid = cosmeticGrid(parts.gridW, parts.gridH);
         List<Cosmetic> cosmetics = filteredCosmetics();
-        int baseY = gridY - scroll;
+        int baseY = parts.gridY - scroll;
         for (int i = 0; i < cosmetics.size(); i++) {
             Cosmetic cosmetic = cosmetics.get(i);
-            int cardX = gridX + (i % grid.columns) * (grid.cardW + grid.gap);
+            int cardX = parts.gridX + (i % grid.columns) * (grid.cardW + grid.gap);
             int cardY = baseY + (i / grid.columns) * (grid.cardH + grid.gap);
-            if (cardY + grid.cardH < gridY || cardY > gridY + gridH) continue;
+            if (cardY + grid.cardH < parts.gridY || cardY > parts.gridY + parts.gridH) continue;
             renderCosmeticCard(context, cosmetic, cardX, cardY, grid.cardW, grid.cardH, mouseX, mouseY, accent);
         }
         context.disableScissor();
 
-        renderCosmeticPreview(context, previewX, sideY, previewW, panelH, accent);
+        if (parts.preview.width > 0) {
+            renderCosmeticPreview(context, parts.preview.x, parts.preview.y, parts.preview.width, parts.preview.height, accent);
+        }
+    }
+
+    private void renderCosmeticDetails(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        Cosmetic cosmetic = selectedCosmetic;
+        int contentBottom = parts.y + parts.height - parts.footerH;
+        int variantX = parts.gridX;
+        int variantY = parts.contentY + 18;
+        int variantW = Math.min(68, Math.max(48, parts.gridW / 5));
+        context.drawTextWithShadow(textRenderer, Text.literal("VARIANTS"), variantX, variantY, WHITE);
+
+        List<Cosmetic> variants = variantsForSelectedCosmetic();
+        int thumbY = variantY + 24;
+        int thumbSize = Math.min(48, Math.max(34, (contentBottom - thumbY - 10) / Math.max(1, Math.min(6, variants.size())) - 5));
+        for (int i = 0; i < variants.size() && i < 7; i++) {
+            Cosmetic variant = variants.get(i);
+            boolean selected = variant == cosmetic;
+            int tx = variantX + 4;
+            int ty = thumbY + i * (thumbSize + 7);
+            context.fill(tx, ty, tx + thumbSize, ty + thumbSize, selected ? 0x552F65C8 : 0x33212632);
+            outline(context, tx, ty, thumbSize, thumbSize, 0, selected ? accent : 0x668A93A6);
+            drawCosmeticTexture(context, variant, tx + 4, ty + 4, thumbSize - 8, thumbSize - 8, accent);
+        }
+
+        int previewX = variantX + variantW + 16;
+        int previewW = Math.max(120, parts.width - (previewX - parts.x) - 26);
+        int previewY = parts.contentY;
+        int previewH = parts.contentH;
+        context.fill(previewX, previewY, previewX + previewW, previewY + previewH, 0x10212632);
+        outline(context, previewX, previewY, previewW, previewH, 0, 0x44FFFFFF);
+
+        String type = cosmeticMenuLabel(cosmetic.type()).toUpperCase(Locale.ROOT);
+        String title = cosmetic.displayName().toUpperCase(Locale.ROOT);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, type, previewW - 40)), previewX + previewW / 2, previewY + 18, MUTED);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, title, previewW - 40)), previewX + previewW / 2, previewY + 32, WHITE);
+
+        int backX = previewX + 12;
+        renderSquareButton(context, backX, previewY + 12, 62, 24, "< BACK", false, mouseX, mouseY, accent);
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            CosmeticPreviewContext.begin(cosmetic);
+            try {
+                InventoryScreen.drawEntity(
+                        context,
+                        previewX + Math.max(28, previewW / 6),
+                        previewY + 58,
+                        previewX + previewW - Math.max(28, previewW / 6),
+                        previewY + previewH - 72,
+                        previewZoom,
+                        0.0F,
+                        previewYaw,
+                        previewPitch,
+                        client.player
+                );
+            } finally {
+                CosmeticPreviewContext.end();
+            }
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), previewX + previewW / 2, previewY + previewH - 62, 0xCFE7EAF2);
+        } else {
+            drawCosmeticTexture(context, cosmetic, previewX + previewW / 2 - 48, previewY + previewH / 2 - 48, 96, 96, accent);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Join a world for 3D preview"), previewX + previewW / 2, previewY + previewH / 2 + 58, MUTED);
+        }
+
+        context.drawTextWithShadow(textRenderer, Text.literal("<"), previewX + 14, previewY + previewH / 2, WHITE);
+        context.drawTextWithShadow(textRenderer, Text.literal(">"), previewX + previewW - 22, previewY + previewH / 2, WHITE);
+
+        int buttonY = previewY + previewH - 36;
+        int buttonW = Math.min(260, previewW - 40);
+        rect(context, previewX + (previewW - buttonW) / 2, buttonY, buttonW, 26, 0, BackendState.online() ? ClientTheme.withAlpha(accent, 210) : 0x55151A25);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(cosmeticActionLabel(cosmetic)), previewX + previewW / 2, buttonY + 9, WHITE);
     }
 
 
     private void renderCatalog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
         renderCosmetics(context, layout, mouseX, mouseY, accent);
+    }
+
+    private void renderShopTopbar(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        int buttonY = parts.y + 11;
+        int buttonH = Math.max(18, Math.min(24, parts.topbarH - 18));
+        int x = parts.x + 8;
+        renderSquareButton(context, x, buttonY, 72, buttonH, cosmeticMenuLabel(selectedCosmeticType).toUpperCase(Locale.ROOT), !showAllCosmetics, mouseX, mouseY, accent);
+        x += 78;
+        renderSquareButton(context, x, buttonY, 58, buttonH, "ALL", showAllCosmetics, mouseX, mouseY, accent);
+        x += 66;
+        int searchW = Math.max(90, Math.min(190, parts.gridX + parts.gridW - x - 10));
+        renderShopSearch(context, x, buttonY, searchW, buttonH, mouseX, mouseY, accent);
+
+        int coinsW = Math.max(78, Math.min(120, parts.width / 8));
+        int coinsX = parts.x + parts.width - coinsW - 12;
+        rect(context, coinsX, buttonY - 3, coinsW, buttonH + 6, 0, 0xFF357FB8);
+        outline(context, coinsX, buttonY - 3, coinsW, buttonH + 6, 0, 0xFF65B9F2);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(BackendState.coins() + " COINS"), coinsX + coinsW / 2, buttonY + (buttonH - 8) / 2, WHITE);
+    }
+
+    private void renderShopSidebar(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        int itemY = parts.contentY + 6 - cosmeticSideScroll;
+        context.enableScissor(parts.sideX, parts.contentY, parts.sideX + parts.sideW, parts.y + parts.height - parts.footerH);
+        for (CosmeticType type : CosmeticType.values()) {
+            boolean active = type == selectedCosmeticType;
+            int rowH = Math.max(18, Math.min(27, parts.height / 15));
+            String label = cosmeticMenuLabel(type).toUpperCase(Locale.ROOT);
+            int color = active && !showAllCosmetics ? accent : WHITE;
+            if (active && !showAllCosmetics) {
+                context.fill(parts.sideX + 2, itemY + 2, parts.sideX + 5, itemY + rowH - 3, accent);
+                context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x222F65C8);
+            }
+            if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x22FFFFFF);
+            }
+            context.drawTextWithShadow(textRenderer, Text.literal(label), parts.sideX + 12, itemY + (rowH - 8) / 2, color);
+            itemY += rowH + 5;
+        }
+        context.disableScissor();
+    }
+
+    private void renderShopSearch(DrawContext context, int x, int y, int width, int height, int mouseX, int mouseY, int accent) {
+        boolean hovered = inside(mouseX, mouseY, x, y, width, height);
+        context.fill(x, y, x + width, y + height, 0xF0000000);
+        outline(context, x, y, width, height, 0, searchFocused ? accent : hovered ? 0xAAFFFFFF : 0xFF5B6473);
+        String text = search.isBlank() && !searchFocused ? "SEARCH..." : search + (searchFocused && System.currentTimeMillis() / 450L % 2L == 0L ? "_" : "");
+        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, text.toUpperCase(Locale.ROOT), width - 10)), x + 5, y + (height - 8) / 2, search.isBlank() && !searchFocused ? MUTED : WHITE);
+    }
+
+    private void renderSquareButton(DrawContext context, int x, int y, int width, int height, String label, boolean active, int mouseX, int mouseY, int accent) {
+        boolean hovered = inside(mouseX, mouseY, x, y, width, height);
+        int color = active ? 0xFF202736 : hovered ? 0xFF25282E : 0xFF17191D;
+        context.fill(x, y, x + width, y + height, color);
+        outline(context, x, y, width, height, 0, active ? accent : 0xFF3C414B);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, label, width - 8)), x + width / 2, y + (height - 8) / 2, active ? WHITE : TEXT);
     }
 
     private void renderCosmeticCard(DrawContext context, Cosmetic cosmetic, int x, int y, int width, int height, int mouseX, int mouseY, int accent) {
@@ -592,27 +1104,39 @@ public class S9LabClientScreen extends ResponsiveScreen {
         boolean owned = S9LabClientClient.getConfigManager().isUnlocked(cosmetic.id());
         boolean selected = cosmetic == selectedCosmetic;
         BackendState.ShopCosmetic shop = BackendState.catalog(cosmetic.id());
-        rect(context, x, y, width, height, 8, selected ? ClientTheme.withAlpha(accent, 44) : hovered ? CARD_HOVER : CARD);
-        outline(context, x, y, width, height, 8, selected || equipped ? ClientTheme.withAlpha(accent, 235) : hovered ? 0xAA45516B : owned ? 0x8849F26F : LINE_SOFT);
-        if (equipped) {
-            rect(context, x + width - 19, y + 7, 12, 12, 6, accent);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("✓"), x + width - 13, y + 10, WHITE);
-        } else if (!owned) {
-            rect(context, x + width - 23, y + 7, 16, 12, 4, 0xAA1A1E28);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("¢"), x + width - 15, y + 10, WARN);
+        int border = selected || equipped ? ClientTheme.withAlpha(accent, 240) : hovered ? 0xCCFFFFFF : 0x66FFFFFF;
+        int tint = switch (cosmetic.type()) {
+            case WINGS, GLINT -> 0x333B66D9;
+            case EMOTE -> 0x33386E3D;
+            default -> 0x26FFFFFF;
+        };
+        context.fill(x, y, x + width, y + height, hovered ? 0x40364A66 : tint);
+        outline(context, x, y, width, height, 0, border);
+
+        String name = TextLayout.ellipsize(textRenderer, cosmetic.displayName().toUpperCase(Locale.ROOT), width - 8);
+        context.drawTextWithShadow(textRenderer, Text.literal(name), x + 5, y + 5, WHITE);
+        renderCardDetailButton(context, x + width - 28, y + 5, inside(mouseX, mouseY, x + width - 28, y + 5, 22, 22), accent);
+
+        int previewX = x + 10;
+        int previewY = y + 18;
+        int previewW = width - 20;
+        int previewH = height - 38;
+        drawCosmeticTexture(context, cosmetic, previewX, previewY, previewW, previewH, accent);
+
+        int badgeW = owned ? 58 : Math.min(width - 26, Math.max(52, textRenderer.getWidth(shop.price() + "✦") + 12));
+        int badgeX = x + Math.max(6, (width - badgeW) / 2 - 7);
+        int badgeY = y + height - 22;
+        if (owned) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(equipped ? "EQUIP" : "OWNED"), x + width / 2, y + height - 16, equipped ? accent : GREEN);
+        } else {
+            int priceColor = rarityColor(cosmetic);
+            context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 17, ClientTheme.withAlpha(priceColor, 75));
+            outline(context, badgeX, badgeY, badgeW, 17, 0, priceColor);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(shop.price() + "✦"), badgeX + badgeW / 2, badgeY + 5, priceColor);
         }
-
-        int previewX = x + 12;
-        int previewY = y + 14;
-        int previewW = width - 24;
-        int previewH = height - 54;
-        rect(context, previewX, previewY, previewW, previewH, 7, 0x55101520);
-        outline(context, previewX, previewY, previewW, previewH, 7, 0x22384255);
-        drawCosmeticTexture(context, cosmetic, previewX + 8, previewY + 7, previewW - 16, previewH - 14, accent);
-
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, cosmetic.displayName(), width - 14)), x + width / 2, y + height - 31, WHITE);
-        String footer = owned ? cosmeticRarity(cosmetic) : shop.price() + " coins";
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(footer), x + width / 2, y + height - 17, owned ? rarityColor(cosmetic) : WARN);
+        if (owned || equipped) {
+            context.drawTextWithShadow(textRenderer, Text.literal("✓"), x + width - 13, y + height - 14, GREEN);
+        }
     }
 
 
@@ -648,16 +1172,15 @@ public class S9LabClientScreen extends ResponsiveScreen {
 
     private void renderCosmeticPreview(DrawContext context, int x, int y, int width, int height, int accent) {
         Cosmetic cosmetic = selectedCosmetic;
-        rect(context, x, y, width, height, 12, 0x82070A10);
-        outline(context, x, y, width, height, 12, LINE_SOFT);
-        context.drawTextWithShadow(textRenderer, Text.literal(cosmetic == null ? "Preview" : TextLayout.ellipsize(textRenderer, cosmetic.displayName(), width - 34)), x + 16, y + 16, WHITE);
-        String state = BackendState.online() ? "Backend synced" : BackendState.status();
-        context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, state, width - 34)), x + 16, y + 30, BackendState.online() ? GREEN : WARN);
+        context.fill(x, y, x + width, y + height, 0x1EFFFFFF);
+        outline(context, x, y, width, height, 0, 0x44FFFFFF);
+        String title = cosmetic == null ? "EMPTY" : TextLayout.ellipsize(textRenderer, cosmetic.displayName().toUpperCase(Locale.ROOT), width - 18);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(title), x + width / 2, y + 22, cosmetic == null ? 0xFFE7EAF2 : WHITE);
+        String state = BackendState.online() ? "CUSTOM " + cosmeticMenuLabel(selectedCosmeticType).toUpperCase(Locale.ROOT) : BackendState.status();
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, state, width - 18)), x + width / 2, y + 10, BackendState.online() ? 0xDDFFFFFF : WARN);
 
-        int boxY = y + 58;
-        int boxH = height - 116;
-        rect(context, x + 14, boxY, width - 28, boxH, 12, 0x68101520);
-        outline(context, x + 14, boxY, width - 28, boxH, 12, 0x22384255);
+        int boxY = y + 54;
+        int boxH = Math.max(80, height - 112);
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
             CosmeticPreviewContext.begin(cosmetic);
@@ -669,6 +1192,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
                         x + width - 24,
                         boxY + boxH - 8,
                         previewZoom,
+                        0.0F,
                         previewYaw,
                         previewPitch,
                         client.player
@@ -676,7 +1200,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
             } finally {
                 CosmeticPreviewContext.end();
             }
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Drag to rotate, scroll to zoom"), x + width / 2, boxY + boxH - 16, DIM);
+            if (height > 260) {
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), x + width / 2, boxY + boxH - 14, 0xBFE7EAF2);
+            }
         } else {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("Join a world for 3D preview"), x + width / 2, boxY + boxH / 2, MUTED);
         }
@@ -687,32 +1213,30 @@ public class S9LabClientScreen extends ResponsiveScreen {
         boolean owned = cosmetic != null && BackendState.owned(cosmetic.id());
         if (owned) {
             int half = (width - 40) / 2;
-            rect(context, x + 16, buttonY, half, 28, 9, disabled ? 0x55151A25 : ClientTheme.withAlpha(accent, 210));
+            rect(context, x + 16, buttonY, half, 28, 0, disabled ? 0x55151A25 : ClientTheme.withAlpha(accent, 210));
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), x + 16 + half / 2, buttonY + 10, WHITE);
-            rect(context, x + 24 + half, buttonY, half, 28, 9, disabled ? 0x55151A25 : 0xFF1B2534);
-            outline(context, x + 24 + half, buttonY, half, 28, 9, disabled ? LINE_SOFT : ClientTheme.withAlpha(accent, 190));
+            rect(context, x + 24 + half, buttonY, half, 28, 0, disabled ? 0x55151A25 : 0xFF1B2534);
+            outline(context, x + 24 + half, buttonY, half, 28, 0, disabled ? LINE_SOFT : ClientTheme.withAlpha(accent, 190));
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("Gift"), x + 24 + half + half / 2, buttonY + 10, disabled ? MUTED : WHITE);
         } else {
-            rect(context, x + 16, buttonY, width - 32, 28, 9, disabled ? 0x55151A25 : ClientTheme.withAlpha(accent, 210));
+            rect(context, x + 16, buttonY, width - 32, 28, 0, disabled ? 0x55151A25 : ClientTheme.withAlpha(accent, 210));
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), x + width / 2, buttonY + 10, WHITE);
         }
     }
 
     private void renderGiftDialog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
-        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0xA9000000);
+        context.fill(0, 0, context.getScaledWindowWidth(), context.getScaledWindowHeight(), 0x77000000);
         int w = Math.min(330, Math.max(260, layout.width / 2));
         int h = 154;
         int x = layout.x + (layout.width - w) / 2;
         int y = layout.y + (layout.height - h) / 2;
-        rect(context, x, y, w, h, 12, 0xF20B0F17);
-        outline(context, x, y, w, h, 12, ClientTheme.withAlpha(accent, 210));
+        PremiumRender.shopPanel(context, x, y, w, h, 42, 0);
         context.drawTextWithShadow(textRenderer, Text.literal("Gift Cosmetic"), x + 18, y + 16, WHITE);
         String name = selectedCosmetic == null ? "" : selectedCosmetic.displayName();
         context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, name, w - 36)), x + 18, y + 31, MUTED);
 
         int inputY = y + 58;
-        rect(context, x + 18, inputY, w - 36, 30, 8, 0xAA111824);
-        outline(context, x + 18, inputY, w - 36, 30, 8, ClientTheme.withAlpha(accent, 180));
+        PremiumRender.shopInput(context, x + 18, inputY, w - 36, 30, true, ClientTheme.withAlpha(accent, 180));
         String input = giftReceiver.isBlank() ? "Player name or UUID" : giftReceiver + (System.currentTimeMillis() / 450L % 2L == 0L ? "_" : "");
         context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, input, w - 58)), x + 30, inputY + 10, giftReceiver.isBlank() ? DIM : WHITE);
         if (!giftStatus.isBlank()) {
@@ -723,18 +1247,18 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int bw = (w - 46) / 2;
         boolean cancelHovered = inside(mouseX, mouseY, x + 18, buttonY, bw, 26);
         boolean sendHovered = inside(mouseX, mouseY, x + 28 + bw, buttonY, bw, 26);
-        rect(context, x + 18, buttonY, bw, 26, 8, cancelHovered ? 0xFF262B36 : 0xFF171C26);
+        rect(context, x + 18, buttonY, bw, 26, 0, cancelHovered ? PremiumRender.SHOP_BUTTON_HOVER : PremiumRender.SHOP_BUTTON);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Cancel"), x + 18 + bw / 2, buttonY + 9, cancelHovered ? WHITE : MUTED);
-        rect(context, x + 28 + bw, buttonY, bw, 26, 8, sendHovered ? ClientTheme.withAlpha(accent, 235) : ClientTheme.withAlpha(accent, 190));
+        rect(context, x + 28 + bw, buttonY, bw, 26, 0, sendHovered ? ClientTheme.withAlpha(accent, 235) : ClientTheme.withAlpha(accent, 190));
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Send Gift"), x + 28 + bw + bw / 2, buttonY + 9, WHITE);
     }
 
 
     private boolean handleHeaderClick(Layout layout, int mouseX, int mouseY) {
         int y = layout.y + 14;
-        int tabX = layout.x + layout.width / 2 - 118;
+        int tabX = tabStartX(layout);
         for (ClientTab tab : visibleTabs()) {
-            int w = tab == ClientTab.COSMETICS ? 82 : 70;
+            int w = tabWidth(tab);
             if (inside(mouseX, mouseY, tabX, y, w, 28)) {
                 selectedTab = tab;
                 searchFocused = false;
@@ -743,7 +1267,234 @@ public class S9LabClientScreen extends ResponsiveScreen {
                 resetPreviewForTab();
                 return true;
             }
-            tabX += w + 18;
+            tabX += w + 12;
+        }
+        return false;
+    }
+
+    private boolean handleClientShellClick(Layout layout, int mouseX, int mouseY) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        int buttonY = parts.y + 11;
+        int buttonH = Math.max(18, Math.min(24, parts.topbarH - 18));
+        int x = parts.x + 8;
+        if (inside(mouseX, mouseY, x, buttonY, 116, buttonH)) {
+            showAllModules = false;
+            moduleDetailsOpen = false;
+            scroll = 0;
+            return true;
+        }
+        x += 124;
+        if (inside(mouseX, mouseY, x, buttonY, 58, buttonH)) {
+            showAllModules = true;
+            moduleDetailsOpen = false;
+            scroll = 0;
+            return true;
+        }
+        x += 66;
+        int searchW = Math.max(110, Math.min(220, parts.x + parts.width - x - Math.max(98, parts.width / 8) - 34));
+        if (inside(mouseX, mouseY, x, buttonY, searchW, buttonH)) {
+            searchFocused = true;
+            return true;
+        }
+        searchFocused = false;
+        return false;
+    }
+
+    private boolean handleFooterTabsClick(Layout layout, int mouseX, int mouseY) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        if (parts.footerH < 28) {
+            return false;
+        }
+        int buttonH = Math.min(24, parts.footerH - 12);
+        int y = parts.y + parts.height - parts.footerH + (parts.footerH - buttonH) / 2;
+        int gap = 8;
+        int[] widths = new int[] {70, 86, 96, 86};
+        int total = widths[0] + widths[1] + widths[2] + widths[3] + gap * 3;
+        int x = parts.x + Math.max(8, (parts.width - total) / 2);
+        ClientTab[] tabs = visibleTabs();
+        for (int i = 0; i < tabs.length; i++) {
+            if (inside(mouseX, mouseY, x, y, widths[i], buttonH)) {
+                selectedTab = tabs[i];
+                moduleDetailsOpen = false;
+                cosmeticDetailsOpen = false;
+                searchFocused = false;
+                search = "";
+                scroll = 0;
+                resetPreviewForTab();
+                return true;
+            }
+            x += widths[i] + gap;
+        }
+        return false;
+    }
+
+    private boolean handleModuleSidebarClick(Layout layout, int mouseX, int mouseY) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        int itemY = parts.contentY + 6;
+        int rowH = Math.max(18, Math.min(27, parts.height / 15));
+        for (ModuleCategory category : ModuleCategory.values()) {
+            if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                selectedCategory = category;
+                showAllModules = false;
+                moduleDetailsOpen = false;
+                scroll = 0;
+                return true;
+            }
+            itemY += rowH + 5;
+        }
+        return false;
+    }
+
+    private boolean handleModsCatalogClick(Layout layout, int mouseX, int mouseY) {
+        if (moduleDetailsOpen && selectedModule != null) {
+            return handleModuleDetailsClick(layout, mouseX, mouseY);
+        }
+        if (handleModuleSidebarClick(layout, mouseX, mouseY)) {
+            return true;
+        }
+        CosmeticLayout parts = cosmeticLayout(layout);
+        Grid grid = grid(parts.gridW, parts.gridH, 136, 116, 4);
+        int baseY = parts.gridY - scroll;
+        List<Module> modules = filteredModules();
+        for (int i = 0; i < modules.size(); i++) {
+            Module module = modules.get(i);
+            int cardX = parts.gridX + (i % grid.columns) * (grid.cardW + grid.gap);
+            int cardY = baseY + (i / grid.columns) * (grid.cardH + grid.gap);
+            if (inside(mouseX, mouseY, cardX, cardY, grid.cardW, grid.cardH)) {
+                selectedModule = module;
+                if (inside(mouseX, mouseY, cardX + grid.cardW - 28, cardY + 5, 22, 22)) {
+                    moduleDetailsOpen = true;
+                    scroll = 0;
+                    return true;
+                }
+                if (inside(mouseX, mouseY, cardX + grid.cardW - 38, cardY + grid.cardH - 22, 34, 20)) {
+                    module.setEnabled(!module.isEnabled());
+                    S9LabClientClient.getConfigManager().save();
+                }
+                return true;
+            }
+        }
+        if (parts.preview.width > 0 && selectedModule != null) {
+            int buttonY = parts.preview.y + parts.preview.height - 46;
+            int switchX = parts.preview.x + parts.preview.width / 2 - 13;
+            int switchY = buttonY + 15;
+            if (inside(mouseX, mouseY, switchX - 4, switchY - 4, 34, 20)) {
+                selectedModule.setEnabled(!selectedModule.isEnabled());
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean handleSettingsCatalogClick(Layout layout, int mouseX, int mouseY) {
+        if (selectedModule != null) {
+            return handleModuleDetailsClick(layout, mouseX, mouseY);
+        }
+        if (handleModuleSidebarClick(layout, mouseX, mouseY)) {
+            return true;
+        }
+        CosmeticLayout parts = cosmeticLayout(layout);
+        if (inside(mouseX, mouseY, parts.gridX, parts.gridY, Math.min(180, parts.gridW), 28)) {
+            MinecraftClient.getInstance().setScreen(new HudEditorScreen(this));
+            return true;
+        }
+        Module module = selectedModule;
+        if (module == null) {
+            List<Module> modules = filteredModules();
+            if (!modules.isEmpty()) {
+                module = modules.get(0);
+                selectedModule = module;
+            }
+        }
+        if (module == null) {
+            return false;
+        }
+        int rowY = parts.gridY + 46;
+        int colW = parts.gridW < 360 ? parts.gridW : (parts.gridW - 28) / 2;
+        if (inside(mouseX, mouseY, parts.gridX + colW - 36, rowY + 3, 34, 20)) {
+            module.setEnabled(!module.isEnabled());
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        rowY += 36;
+        int i = 0;
+        for (Setting<?> setting : module.getSettings()) {
+            int col = parts.gridW < 360 ? 0 : i % 2;
+            int row = parts.gridW < 360 ? i : i / 2;
+            int sx = parts.gridX + col * (colW + 28);
+            int sy = rowY + row * 36;
+            if (setting instanceof BooleanSetting && inside(mouseX, mouseY, sx + colW - 36, sy + 3, 34, 20)) {
+                changeSetting(module, setting);
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+            if (!(setting instanceof BooleanSetting) && inside(mouseX, mouseY, sx, sy, colW, 30)) {
+                changeSetting(module, setting);
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+            i++;
+        }
+        return false;
+    }
+
+    private boolean handleModuleDetailsClick(Layout layout, int mouseX, int mouseY) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        Module module = selectedModule;
+        if (module == null) {
+            return false;
+        }
+        int x = parts.sideX + 10;
+        int y = parts.contentY + 12;
+        int width = parts.width - 20;
+        if (inside(mouseX, mouseY, x + 8, y + 6, 120, 34)) {
+            moduleDetailsOpen = false;
+            return true;
+        }
+        int topButtonY = y + 10;
+        int resetW = 72;
+        int onW = 54;
+        int resetX = x + width - resetW - 62;
+        int onX = resetX - onW - 10;
+        if (inside(mouseX, mouseY, onX, topButtonY, onW, 28)) {
+            module.setEnabled(!module.isEnabled());
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        if (inside(mouseX, mouseY, resetX, topButtonY, resetW, 28)
+                || inside(mouseX, mouseY, resetX + resetW + 10, topButtonY, 34, 28)) {
+            resetModule(module);
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+
+        int rowY = y + 78;
+        rowY += 22;
+        KeybindSetting keybind = keybindSetting(module);
+        int rowX = x + 34;
+        int rowW = width - 68;
+        if (keybind != null && inside(mouseX, mouseY, rowX + rowW - 132, rowY + 4, 132, 24)) {
+            changeSetting(module, keybind);
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        rowY += 48 + 22;
+        for (Setting<?> setting : module.getSettings()) {
+            if (setting instanceof KeybindSetting) {
+                continue;
+            }
+            if (setting instanceof BooleanSetting && inside(mouseX, mouseY, rowX + rowW - 34, rowY + 3, 34, 24)) {
+                changeSetting(module, setting);
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+            if (!(setting instanceof BooleanSetting) && inside(mouseX, mouseY, rowX + rowW - 142, rowY + 4, 142, 24)) {
+                changeSetting(module, setting);
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+            rowY += 36;
         }
         return false;
     }
@@ -839,6 +1590,25 @@ public class S9LabClientScreen extends ResponsiveScreen {
         return false;
     }
 
+    private boolean handleInlineModuleSettingsClick(int x, int y, int width, int mouseX, int mouseY) {
+        int rowY = y + 84;
+        if (inside(mouseX, mouseY, x + 14, rowY, width - 28, 30)) {
+            selectedModule.toggle();
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        rowY += 38;
+        for (Setting<?> setting : selectedModule.getSettings()) {
+            if (inside(mouseX, mouseY, x + 14, rowY, width - 28, 30)) {
+                changeSetting(selectedModule, setting);
+                S9LabClientClient.getConfigManager().save();
+                return true;
+            }
+            rowY += 38;
+        }
+        return false;
+    }
+
 
     private boolean handleSettingsClick(Layout layout, int mouseX, int mouseY) {
         if (selectedModule == null) {
@@ -910,70 +1680,75 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private boolean handleCosmeticClick(Layout layout, int mouseX, int mouseY) {
-        int sideX = layout.x + 26;
-        int sideY = layout.bodyY() + 18;
-        int sideW = 132;
-        int panelH = layout.y + layout.height - sideY - 24;
-        int previewW = Math.max(190, Math.min(235, layout.width / 4));
-        int previewX = layout.x + layout.width - previewW - 28;
-        int gridX = sideX + sideW + 18;
-        int searchY = sideY;
-        int searchH = 32;
-        int gridY = searchY + searchH + 16;
-        int gridW = previewX - gridX - 18;
-        int gridH = layout.y + layout.height - gridY - 24;
+        CosmeticLayout parts = cosmeticLayout(layout);
 
-        if (inside(mouseX, mouseY, sideX + 12, sideY + panelH - 38, sideW - 24, 26)) {
-            close();
-            return true;
-        }
-        int sortX = gridX + gridW - 58;
-        if (inside(mouseX, mouseY, sortX, searchY + 6, 23, 20)) {
-            sortAscending = true;
+        int buttonY = parts.y + 11;
+        int buttonH = Math.max(18, Math.min(24, parts.topbarH - 18));
+        int typeX = parts.x + 8;
+        int allX = typeX + 78;
+        if (inside(mouseX, mouseY, typeX, buttonY, 72, buttonH)) {
+            showAllCosmetics = false;
+            cosmeticDetailsOpen = false;
             scroll = 0;
             return true;
         }
-        if (inside(mouseX, mouseY, sortX + 28, searchY + 6, 23, 20)) {
-            sortAscending = false;
+        if (inside(mouseX, mouseY, allX, buttonY, 58, buttonH)) {
+            showAllCosmetics = true;
+            cosmeticDetailsOpen = false;
             scroll = 0;
             return true;
         }
-        if (inside(mouseX, mouseY, gridX, searchY, gridW - 66, 30)) {
+        int searchX = allX + 66;
+        int searchW = Math.max(90, Math.min(190, parts.gridX + parts.gridW - searchX - 10));
+        if (inside(mouseX, mouseY, searchX, buttonY, searchW, buttonH)) {
             searchFocused = true;
             return true;
         }
         searchFocused = false;
-        int listTop = sideY + 18;
-        int listBottom = sideY + panelH - 54;
-        if (inside(mouseX, mouseY, sideX, listTop, sideW, listBottom - listTop)) {
-            int itemY = listTop - cosmeticSideScroll;
+
+        if (inside(mouseX, mouseY, parts.sideX, parts.contentY, parts.sideW, parts.contentH)) {
+            int itemY = parts.contentY + 6 - cosmeticSideScroll;
+            int rowH = Math.max(18, Math.min(27, parts.height / 15));
             for (CosmeticType type : CosmeticType.values()) {
-                if (inside(mouseX, mouseY, sideX + 12, itemY, sideW - 24, 30)) {
-                selectedCosmeticType = type;
-                selectedCosmetic = S9LabClientClient.getCosmeticRegistry().firstByType(type).orElse(null);
-                scroll = 0;
-                // keep the category sidebar clamped inside its panel
-                cosmeticSideScroll = clamp(cosmeticSideScroll, 0, maxCosmeticSideScroll(panelH));
-                resetPreviewForCosmeticType(type);
+                if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                    selectedCosmeticType = type;
+                    showAllCosmetics = false;
+                    cosmeticDetailsOpen = false;
+                    selectedCosmetic = S9LabClientClient.getCosmeticRegistry().firstByType(type).orElse(null);
+                    scroll = 0;
+                    cosmeticSideScroll = clamp(cosmeticSideScroll, 0, maxCosmeticSideScroll(parts.contentH));
+                    resetPreviewForCosmeticType(type);
                     return true;
                 }
-                itemY += 42;
+                itemY += rowH + 5;
             }
         }
-        Grid grid = grid(gridW, gridH, 105, 112, 4);
-        int baseY = gridY - scroll;
+        if (cosmeticDetailsOpen && selectedCosmetic != null) {
+            return handleCosmeticDetailsClick(layout, mouseX, mouseY);
+        }
+        Grid grid = cosmeticGrid(parts.gridW, parts.gridH);
+        int baseY = parts.gridY - scroll;
         List<Cosmetic> cosmetics = filteredCosmetics();
         for (int i = 0; i < cosmetics.size(); i++) {
-            int cardX = gridX + (i % grid.columns) * (grid.cardW + grid.gap);
+            int cardX = parts.gridX + (i % grid.columns) * (grid.cardW + grid.gap);
             int cardY = baseY + (i / grid.columns) * (grid.cardH + grid.gap);
             if (inside(mouseX, mouseY, cardX, cardY, grid.cardW, grid.cardH)) {
                 Cosmetic cosmetic = cosmetics.get(i);
                 selectedCosmetic = cosmetic;
+                selectedCosmeticType = cosmetic.type();
                 resetPreviewForCosmeticType(cosmetic.type());
+                if (inside(mouseX, mouseY, cardX + grid.cardW - 28, cardY + 5, 22, 22)) {
+                    cosmeticDetailsOpen = true;
+                    scroll = 0;
+                    return true;
+                }
                 return true;
             }
         }
         Rect preview = previewBounds(layout);
+        if (preview.width <= 0) {
+            return false;
+        }
         int actionY = preview.y + preview.height - 46;
         boolean owned = selectedCosmetic != null && BackendState.owned(selectedCosmetic.id());
         if (owned) {
@@ -991,6 +1766,55 @@ public class S9LabClientScreen extends ResponsiveScreen {
             return true;
         }
         if (preview.contains(mouseX, mouseY)) {
+            previewDragging = true;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleCosmeticDetailsClick(Layout layout, int mouseX, int mouseY) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        Cosmetic cosmetic = selectedCosmetic;
+        if (cosmetic == null) {
+            return false;
+        }
+        Rect bounds = cosmeticDetailPreviewBounds(layout);
+        if (inside(mouseX, mouseY, bounds.x + 12, bounds.y + 12, 62, 24)) {
+            cosmeticDetailsOpen = false;
+            return true;
+        }
+        int contentBottom = parts.y + parts.height - parts.footerH;
+        int variantX = parts.gridX;
+        int variantY = parts.contentY + 42;
+        int variantW = Math.min(68, Math.max(48, parts.gridW / 5));
+        List<Cosmetic> variants = variantsForSelectedCosmetic();
+        int thumbSize = Math.min(48, Math.max(34, (contentBottom - variantY - 10) / Math.max(1, Math.min(6, variants.size())) - 5));
+        for (int i = 0; i < variants.size() && i < 7; i++) {
+            int tx = variantX + 4;
+            int ty = variantY + i * (thumbSize + 7);
+            if (inside(mouseX, mouseY, tx, ty, thumbSize, thumbSize)) {
+                selectedCosmetic = variants.get(i);
+                selectedCosmeticType = selectedCosmetic.type();
+                resetPreviewForCosmeticType(selectedCosmetic.type());
+                return true;
+            }
+        }
+        if (inside(mouseX, mouseY, bounds.x + 8, bounds.y + bounds.height / 2 - 18, 34, 42)) {
+            selectAdjacentCosmeticVariant(-1);
+            return true;
+        }
+        if (inside(mouseX, mouseY, bounds.x + bounds.width - 42, bounds.y + bounds.height / 2 - 18, 34, 42)) {
+            selectAdjacentCosmeticVariant(1);
+            return true;
+        }
+        int buttonW = Math.min(260, bounds.width - 40);
+        int buttonX = bounds.x + (bounds.width - buttonW) / 2;
+        int buttonY = bounds.y + bounds.height - 36;
+        if (inside(mouseX, mouseY, buttonX, buttonY, buttonW, 26)) {
+            performCosmeticAction();
+            return true;
+        }
+        if (bounds.contains(mouseX, mouseY)) {
             previewDragging = true;
             return true;
         }
@@ -1023,14 +1847,21 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (selectedTab == ClientTab.MODS && selectedModule == null) {
             return Rect.empty();
         }
-        int sideY = layout.bodyY() + 22;
         if (selectedTab == ClientTab.COSMETICS || selectedTab == ClientTab.SHOP) {
-            sideY = layout.bodyY() + 18;
-            int previewW = Math.max(190, Math.min(235, layout.width / 4));
-            int previewX = layout.x + layout.width - previewW - 28;
-            return new Rect(previewX, sideY, previewW, layout.y + layout.height - sideY - 24);
+            if (cosmeticDetailsOpen && selectedCosmetic != null) {
+                return cosmeticDetailPreviewBounds(layout);
+            }
+            return cosmeticLayout(layout).preview;
         }
         return Rect.empty();
+    }
+
+    private Rect cosmeticDetailPreviewBounds(Layout layout) {
+        CosmeticLayout parts = cosmeticLayout(layout);
+        int variantW = Math.min(68, Math.max(48, parts.gridW / 5));
+        int previewX = parts.gridX + variantW + 16;
+        int previewW = Math.max(120, parts.width - (previewX - parts.x) - 26);
+        return new Rect(previewX, parts.contentY, previewW, parts.contentH);
     }
 
     private Rect notificationBannerBounds(Layout layout) {
@@ -1042,6 +1873,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private boolean handleHudDragStart(int mouseX, int mouseY) {
+        if (moduleDetailsOpen || cosmeticDetailsOpen) {
+            return false;
+        }
         if (selectedTab != ClientTab.MODS || selectedCategory != ModuleCategory.HUD) {
             return false;
         }
@@ -1143,7 +1977,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
             comparator = comparator.reversed();
         }
         return S9LabClientClient.getModuleManager().getModules().stream()
-                .filter(module -> module.getCategory() == selectedCategory)
+                .filter(module -> showAllModules || module.getCategory() == selectedCategory)
                 .filter(module -> query.isEmpty()
                         || module.getName().toLowerCase(Locale.ROOT).contains(query)
                         || module.getDescription().toLowerCase(Locale.ROOT).contains(query))
@@ -1158,12 +1992,61 @@ public class S9LabClientScreen extends ResponsiveScreen {
             comparator = comparator.reversed();
         }
         return S9LabClientClient.getCosmeticRegistry().all().stream()
-                .filter(cosmetic -> cosmetic.type() == selectedCosmeticType)
+                .filter(cosmetic -> showAllCosmetics || cosmetic.type() == selectedCosmeticType)
                 .filter(cosmetic -> query.isEmpty()
                         || cosmetic.displayName().toLowerCase(Locale.ROOT).contains(query)
                         || cosmetic.id().toLowerCase(Locale.ROOT).contains(query))
                 .sorted(comparator)
                 .toList();
+    }
+
+    private List<Cosmetic> variantsForSelectedCosmetic() {
+        Cosmetic cosmetic = selectedCosmetic;
+        CosmeticType type = cosmetic == null ? selectedCosmeticType : cosmetic.type();
+        return S9LabClientClient.getCosmeticRegistry().all().stream()
+                .filter(variant -> variant.type() == type)
+                .sorted(Comparator.comparing(variant -> variant.displayName().toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private void selectAdjacentCosmeticVariant(int direction) {
+        List<Cosmetic> variants = variantsForSelectedCosmetic();
+        if (variants.isEmpty()) {
+            return;
+        }
+        int index = Math.max(0, variants.indexOf(selectedCosmetic));
+        selectedCosmetic = variants.get(Math.floorMod(index + direction, variants.size()));
+        selectedCosmeticType = selectedCosmetic.type();
+        resetPreviewForCosmeticType(selectedCosmetic.type());
+    }
+
+    private KeybindSetting keybindSetting(Module module) {
+        for (Setting<?> setting : module.getSettings()) {
+            if (setting instanceof KeybindSetting keybindSetting) {
+                return keybindSetting;
+            }
+        }
+        return null;
+    }
+
+    private static String keybindValue(KeybindSetting keybindSetting) {
+        return keybindSetting.getValue() == 0 ? "Not Bound" : String.valueOf(keybindSetting.getValue());
+    }
+
+    private void resetModule(Module module) {
+        module.setEnabled(false);
+        for (Setting<?> setting : module.getSettings()) {
+            if (setting instanceof BooleanSetting booleanSetting) {
+                booleanSetting.setValue(false);
+            } else if (setting instanceof KeybindSetting keybindSetting) {
+                keybindSetting.setValue(0);
+            } else if (setting instanceof ModeSetting modeSetting && !modeSetting.getModes().isEmpty()) {
+                modeSetting.setValue(modeSetting.getModes().get(0));
+            } else if (setting instanceof NumberSetting numberSetting) {
+                numberSetting.setValue(numberSetting.getMin());
+            }
+            syncSettingToCosmetic(module, setting);
+        }
     }
 
     private void changeSetting(Module module, Setting<?> setting) {
@@ -1302,25 +2185,23 @@ public class S9LabClientScreen extends ResponsiveScreen {
 
     private int maxScroll(Layout layout) {
         if (selectedTab == ClientTab.MODS) {
-            int x = layout.x + 20;
-            int y = layout.bodyY() + 48;
-            int width = layout.width - 40;
-            int gridH = layout.y + layout.height - y - 20;
-            Grid grid = grid(width, gridH, 132, 84, 5);
-            return Math.max(0, rows(filteredModules().size(), grid.columns) * (grid.cardH + grid.gap) - gridH);
+            if (moduleDetailsOpen) {
+                return 0;
+            }
+            CosmeticLayout parts = cosmeticLayout(layout);
+            Grid grid = grid(parts.gridW, parts.gridH, 136, 116, 4);
+            return Math.max(0, rows(filteredModules().size(), grid.columns) * (grid.cardH + grid.gap) - parts.gridH);
         }
         if (selectedTab == ClientTab.SETTINGS) {
             return 0;
         }
-        int sideX = layout.x + 26;
-        int sideW = 132;
-        int previewW = Math.max(190, Math.min(235, layout.width / 4));
-        int previewX = layout.x + layout.width - previewW - 28;
-        int gridX = sideX + sideW + 18;
-        int gridW = previewX - gridX - 18;
-        Grid grid = grid(gridW, layout.bodyHeight(), 105, 112, 4);
+        if (cosmeticDetailsOpen) {
+            return 0;
+        }
+        CosmeticLayout parts = cosmeticLayout(layout);
+        Grid grid = cosmeticGrid(parts.gridW, parts.gridH);
         int rows = rows(filteredCosmetics().size(), grid.columns);
-        return Math.max(0, rows * (grid.cardH + grid.gap) - (layout.bodyHeight() - 72));
+        return Math.max(0, rows * (grid.cardH + grid.gap) - parts.gridH);
     }
 
 
@@ -1329,17 +2210,57 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private Layout layout() {
-        ScreenLayout screen = centeredLayout(780, 400, 360, 250);
-        int header = screen.height() < 280 ? 46 : 58;
+        ScreenLayout screen = centeredLayout(960, 520, 360, 250);
+        int header = screen.height() < 300 ? 42 : 48;
         return new Layout(screen.x(), screen.y(), screen.width(), screen.height(), screen.padding(), header);
     }
 
 
+    private CosmeticLayout cosmeticLayout(Layout layout) {
+        int margin = Math.max(6, layout.pad / 2);
+        int x = layout.x + margin;
+        int y = layout.y + margin;
+        int width = Math.max(1, layout.width - margin * 2);
+        int height = Math.max(1, layout.y + layout.height - y - margin);
+        int topbarH = height < 260 ? 38 : 48;
+        int footerH = height < 270 ? 30 : 44;
+        int contentY = y + topbarH;
+        int contentH = Math.max(1, height - topbarH - footerH);
+        int gap = Math.max(5, ResponsiveLayout.adaptiveGap(width, height));
+        int sideW = clamp(width / 8, 70, 126);
+        int previewW = clamp(width / 4, 116, 238);
+        if (width < 470) {
+            previewW = clamp(width / 4, 96, 128);
+        }
+        int sideX = x;
+        int previewX = x + width - previewW;
+        int gridX = sideX + sideW + gap;
+        int gridW = previewX - gridX - gap;
+        if (gridW < 96) {
+            previewW = Math.max(90, previewW - (96 - gridW));
+            previewX = x + width - previewW;
+            gridW = Math.max(96, previewX - gridX - gap);
+        }
+        int gridY = contentY + (height < 290 ? 42 : 58);
+        int gridH = Math.max(1, y + height - footerH - gridY);
+        Rect preview = new Rect(previewX, contentY, previewW, contentH);
+        return new CosmeticLayout(x, y, width, height, topbarH, footerH, contentY, contentH, sideX, sideW, gridX, gridY, gridW, gridH, preview);
+    }
+
+    private Grid cosmeticGrid(int width, int height) {
+        int gap = Math.max(6, ResponsiveLayout.adaptiveGap(width, height));
+        int minCardW = width < 270 ? 86 : 106;
+        int columns = Math.max(1, Math.min(4, (width + gap) / Math.max(1, minCardW + gap)));
+        int cardW = Math.max(76, (width - gap * (columns - 1)) / columns);
+        int cardH = clamp(Math.round(cardW * 1.08F), 96, height < 210 ? 112 : 148);
+        return new Grid(columns, gap, cardW, cardH);
+    }
+
     private Grid grid(int width, int height, int minCardW, int preferredCardH, int maxColumns) {
-        int columns = ResponsiveLayout.columns(width, minCardW, maxColumns);
-        int gap = 7;
-        int cardW = Math.max(86, (width - gap * (columns - 1)) / columns);
-        int cardH = preferredCardH;
+        int gap = ResponsiveLayout.adaptiveGap(width, height);
+        int columns = Math.max(1, Math.min(maxColumns, (width + gap) / Math.max(1, minCardW + gap)));
+        int cardW = Math.max(64, (width - gap * (columns - 1)) / columns);
+        int cardH = Math.max(64, preferredCardH);
         return new Grid(columns, gap, cardW, cardH);
     }
 
@@ -1389,7 +2310,23 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private static ClientTab[] visibleTabs() {
-        return new ClientTab[]{ClientTab.MODS, ClientTab.SETTINGS, ClientTab.COSMETICS};
+        return new ClientTab[]{ClientTab.MODS, ClientTab.SETTINGS, ClientTab.COSMETICS, ClientTab.SHOP};
+    }
+
+    private int tabStartX(Layout layout) {
+        int total = 0;
+        for (ClientTab tab : visibleTabs()) {
+            total += tabWidth(tab);
+        }
+        total += (visibleTabs().length - 1) * 12;
+        int minX = layout.x + 72;
+        int maxX = layout.x + layout.width - total - 130;
+        return clamp(layout.x + layout.width / 2 - total / 2, minX, Math.max(minX, maxX));
+    }
+
+    private int tabWidth(ClientTab tab) {
+        int base = textRenderer == null ? tab.label.length() * 7 : textRenderer.getWidth(tab.label);
+        return Math.max(48, Math.min(78, base + 20));
     }
 
     private static String cosmeticRarity(Cosmetic cosmetic) {
@@ -1454,6 +2391,28 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private record Grid(int columns, int gap, int cardW, int cardH) {
+        private int contentHeight(int itemCount) {
+            return rows(itemCount, columns) * (cardH + gap);
+        }
+    }
+
+    private record CosmeticLayout(
+            int x,
+            int y,
+            int width,
+            int height,
+            int topbarH,
+            int footerH,
+            int contentY,
+            int contentH,
+            int sideX,
+            int sideW,
+            int gridX,
+            int gridY,
+            int gridW,
+            int gridH,
+            Rect preview
+    ) {
     }
 
     private record Rect(int x, int y, int width, int height) {

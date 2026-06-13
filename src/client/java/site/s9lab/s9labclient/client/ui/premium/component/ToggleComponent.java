@@ -32,15 +32,17 @@ public class ToggleComponent extends Component {
         boolean hovered = contains(mouseX, mouseY);
         float hover = animations.animate(id + ".hover", hovered, deltaTicks);
         float enabled = animations.animate(id + ".enabled", getter.getAsBoolean(), deltaTicks);
-        PremiumRender.card(context, x, y, width, height, theme.radius(), ClientTheme.mix(theme.cardColor(), theme.cardHoverColor(), hover), theme.borderColor());
+        PremiumRender.card(context, x, y, width, height, 0,
+                ClientTheme.mix(PremiumRender.SHOP_CARD, PremiumRender.SHOP_CARD_HOVER, hover),
+                hovered ? ClientTheme.withAlpha(theme.accentColor(), 180) : PremiumRender.SHOP_SOFT_BORDER);
         context.drawTextWithShadow(client.textRenderer, label, x + LABEL_PADDING, y + (height - client.textRenderer.fontHeight) / 2, theme.textColor());
 
         int sx = x + width - SWITCH_WIDTH - LABEL_PADDING;
         int sy = y + (height - SWITCH_HEIGHT) / 2;
         int track = ClientTheme.mix(0xFF333746, theme.accentColor(), enabled);
-        PremiumRender.roundedRect(context, sx, sy, SWITCH_WIDTH, SWITCH_HEIGHT, SWITCH_HEIGHT / 2, track);
+        PremiumRender.roundedRect(context, sx, sy, SWITCH_WIDTH, SWITCH_HEIGHT, 0, track);
         int knobX = sx + 2 + Math.round((SWITCH_WIDTH - KNOB_SIZE - 4) * enabled);
-        PremiumRender.roundedRect(context, knobX, sy + 2, KNOB_SIZE, KNOB_SIZE, KNOB_SIZE / 2, 0xFFFFFFFF);
+        PremiumRender.roundedRect(context, knobX, sy + 2, KNOB_SIZE, KNOB_SIZE, 0, 0xFFFFFFFF);
     }
 
     @Override

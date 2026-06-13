@@ -88,7 +88,7 @@ public final class BackendClient {
 
     public static void buyCosmetic(String cosmeticId) {
         postAction("/shop/buy", cosmeticPayload(cosmeticId, ""), ignored ->
-                S9ToastManager.success("Purchased", cosmeticName(cosmeticId)));
+                S9ToastManager.success("Successful purchase", cosmeticName(cosmeticId)));
     }
 
     public static void equipCosmetic(CosmeticType type, String cosmeticId) {
@@ -582,7 +582,7 @@ public final class BackendClient {
     private static void handleCosmeticAction(String event, JsonObject json) {
         String cosmeticName = string(json, "cosmeticName");
         switch (event) {
-            case "CosmeticPurchased" -> S9ToastManager.success("Purchased", cosmeticName);
+            case "CosmeticPurchased" -> S9ToastManager.success("Successful purchase", cosmeticName);
             case "CosmeticEquipped" -> S9ToastManager.success("Cosmetic equipped", cosmeticName);
             case "CosmeticUnequipped" -> S9ToastManager.success("Cosmetic unequipped", cosmeticName);
             default -> {

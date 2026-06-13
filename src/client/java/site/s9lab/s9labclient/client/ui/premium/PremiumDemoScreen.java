@@ -95,7 +95,7 @@ public class PremiumDemoScreen extends ResponsiveScreen {
         clampScroll();
         float intro = animations.animate("screen.intro", 1.0F, 6.0F, deltaTicks);
         int lift = Math.round((1.0F - intro) * 18.0F);
-        PremiumRender.card(context, layout.x, layout.y + lift, layout.width, layout.height, theme.radius(), theme.panelColor(), ClientTheme.withAlpha(theme.accentColor(), 120));
+        PremiumRender.shopPanel(context, layout.x, layout.y + lift, layout.width, layout.height, HEADER_HEIGHT, 0);
         renderHeader(context, layout, theme);
         renderColumns(context, layout, mouseX, mouseY, deltaTicks, theme);
         super.render(context, mouseX, mouseY, deltaTicks);
@@ -225,7 +225,7 @@ public class PremiumDemoScreen extends ResponsiveScreen {
         }
         int chipWidth = 68;
         if (layout.width >= chipWidth + layout.innerPadding * 2 + 130) {
-            PremiumRender.roundedRect(context, layout.x + layout.width - layout.innerPadding - chipWidth, layout.y + 15, chipWidth, 22, theme.radius(), ClientTheme.withAlpha(theme.accentColor(), 90));
+            PremiumRender.roundedRect(context, layout.x + layout.width - layout.innerPadding - chipWidth, layout.y + 15, chipWidth, 22, 0, PremiumRender.SHOP_BUTTON_ACTIVE);
             PremiumRender.centeredText(context, Text.literal(ThemeManager.accentHex()), layout.x + layout.width - layout.innerPadding - chipWidth / 2, layout.y + 22, theme.textColor());
         }
     }
@@ -254,7 +254,7 @@ public class PremiumDemoScreen extends ResponsiveScreen {
 
     private void renderControls(DrawContext context, int x, int y, int width, int height, int mouseX, int mouseY, float deltaTicks, ClientTheme theme) {
         MinecraftClient client = MinecraftClient.getInstance();
-        PremiumRender.card(context, x, y, width, height, theme.radius(), theme.panelSoftColor(), theme.borderColor());
+        PremiumRender.card(context, x, y, width, height, 0, PremiumRender.SHOP_CARD, PremiumRender.SHOP_SOFT_BORDER);
         context.drawTextWithShadow(client.textRenderer, Text.literal("Theme Controls"), x + 12, y + 10, theme.textColor());
         context.drawTextWithShadow(client.textRenderer, Text.literal("RGB + HEX accent support"), x + 12, y + 24, theme.mutedTextColor());
 
@@ -283,7 +283,7 @@ public class PremiumDemoScreen extends ResponsiveScreen {
         MinecraftClient client = MinecraftClient.getInstance();
         hexBounds = new Rect(x, y, width, 28);
         int border = hexFocused ? ClientTheme.withAlpha(theme.accentColor(), 190) : theme.borderColor();
-        PremiumRender.card(context, x, y, width, 28, theme.radius(), theme.cardColor(), border);
+        PremiumRender.card(context, x, y, width, 28, 0, PremiumRender.SHOP_INPUT, border);
         context.drawTextWithShadow(client.textRenderer, Text.literal("HEX"), x + LABEL_PAD(), y + 10, theme.mutedTextColor());
         String value = hexInput + (hexFocused && System.currentTimeMillis() / 450L % 2L == 0L ? "_" : "");
         context.drawTextWithShadow(client.textRenderer, Text.literal(value), x + width - LABEL_PAD() - client.textRenderer.getWidth(value), y + 10, theme.textColor());

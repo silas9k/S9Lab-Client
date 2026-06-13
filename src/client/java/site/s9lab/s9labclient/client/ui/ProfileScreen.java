@@ -54,11 +54,10 @@ public class ProfileScreen extends ResponsiveScreen {
         ensureResponsiveLayout();
         ClientTheme theme = ThemeManager.theme();
         int accent = theme.accentColor();
-        context.fill(0, 0, width, height, 0x8A000000);
+        PremiumRender.shopBackdrop(context);
 
         ScreenLayout layout = centeredLayout(560, 320, 310, 230);
-        PremiumRender.card(context, layout.x(), layout.y(), layout.width(), layout.height(), 12, 0xED0B0F17, 0xFF2B313D);
-        context.fill(layout.x(), layout.y(), layout.x() + layout.width(), layout.y() + 46, 0xDD171B24);
+        PremiumRender.shopPanel(context, layout.x(), layout.y(), layout.width(), layout.height(), 46, 0);
         context.drawTextWithShadow(textRenderer, Text.literal("S9Lab Profile"), layout.x() + 18, layout.y() + 15, WHITE);
         drawClose(context, layout, mouseX, mouseY);
 
@@ -124,15 +123,14 @@ public class ProfileScreen extends ResponsiveScreen {
     }
 
     private void stat(DrawContext context, String label, String value, int x, int y, int width, int accent) {
-        PremiumRender.roundedRect(context, x, y, width, 40, 8, 0x80111824);
-        PremiumRender.outline(context, x, y, width, 40, 8, 0x44384255);
+        PremiumRender.card(context, x, y, width, 40, 0, PremiumRender.SHOP_CARD, 0x55FFFFFF);
         context.drawTextWithShadow(textRenderer, Text.literal(label), x + 10, y + 8, DIM);
         context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, value, width - 20)), x + 10, y + 23, label.equals("Coins") ? accent : TEXT);
     }
 
     private void drawClose(DrawContext context, ScreenLayout layout, int mouseX, int mouseY) {
         boolean hovered = inside(mouseX, mouseY, layout.x() + layout.width() - 34, layout.y() + 12, 22, 22);
-        PremiumRender.roundedRect(context, layout.x() + layout.width() - 34, layout.y() + 12, 22, 22, 4, hovered ? 0xFF2B1A22 : 0xFF171C26);
+        PremiumRender.roundedRect(context, layout.x() + layout.width() - 34, layout.y() + 12, 22, 22, 0, hovered ? 0xFF2B1A22 : PremiumRender.SHOP_BUTTON);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("×"), layout.x() + layout.width() - 23, layout.y() + 18, hovered ? 0xFFFF9CA3 : MUTED);
     }
 

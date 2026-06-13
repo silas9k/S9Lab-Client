@@ -31,6 +31,12 @@ loom {
     }
 }
 
+sourceSets.configureEach {
+    java {
+        exclude "**/ui_sicherung/**"
+    }
+}
+
 
 repositories {
     maven {

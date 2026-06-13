@@ -12,6 +12,7 @@ import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.module.HudModule;
 import site.s9lab.s9labclient.client.module.setting.NumberSetting;
 import site.s9lab.s9labclient.client.module.setting.Setting;
+import site.s9lab.s9labclient.client.ui.premium.PremiumRender;
 import site.s9lab.s9labclient.client.ui.premium.theme.ClientTheme;
 import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
 
@@ -75,7 +76,7 @@ public class HudEditorScreen extends ResponsiveScreen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         int accent = ThemeManager.theme().accentColor();
-        context.fill(0, 0, width, height, 0x26000000);
+        PremiumRender.shopBackdrop(context);
 
         if (showGrid) drawDotGrid(context, accent);
         renderTopBar(context, accent);
@@ -98,8 +99,8 @@ public class HudEditorScreen extends ResponsiveScreen {
         int x = 12;
         int y = 10;
         int w = 445;
-        rect(context, x, y, w, 31, 8, 0xC3070B12);
-        outline(context, x, y, w, 31, 8, 0x773A4458);
+        rect(context, x, y, w, 31, 0, PremiumRender.SHOP_HEADER);
+        outline(context, x, y, w, 31, 0, PremiumRender.SHOP_BORDER);
         context.drawTextWithShadow(textRenderer, Text.literal("S9LAB HUD EDITOR"), x + 12, y + 7, WHITE);
         context.drawTextWithShadow(textRenderer, Text.literal("Drag • wheel/handle scale • X hide • R reset • ESC save"), x + 132, y + 7, MUTED);
         tinyToggle(context, x + w + 8, y, 70, 31, snap ? "Snap" : "Free", snap, accent);
@@ -115,9 +116,9 @@ public class HudEditorScreen extends ResponsiveScreen {
         int fill = hidden ? 0x66202634 : active ? ClientTheme.withAlpha(accent, 105) : hovered ? CARD_HOVER : CARD;
         int border = active ? accent : hovered ? 0xAA59657E : 0x77394358;
 
-        shadow(context, b.x, b.y, b.w, b.h, 6);
-        rect(context, b.x, b.y, b.w, b.h, 6, fill);
-        outline(context, b.x, b.y, b.w, b.h, 6, border);
+        shadow(context, b.x, b.y, b.w, b.h, 0);
+        rect(context, b.x, b.y, b.w, b.h, 0, fill);
+        outline(context, b.x, b.y, b.w, b.h, 0, border);
 
         if (active || hovered) {
             renderCloseX(context, b, accent, hoveredClose(mouseX, mouseY, b));
@@ -133,16 +134,16 @@ public class HudEditorScreen extends ResponsiveScreen {
     private void renderCloseX(DrawContext context, Bounds b, int accent, boolean hovered) {
         int x = b.x + b.w - X_SIZE + 4;
         int y = b.y - 7;
-        rect(context, x, y, X_SIZE, X_SIZE, 6, hovered ? 0xFFE65252 : 0xDD151B27);
-        outline(context, x, y, X_SIZE, X_SIZE, 6, hovered ? 0xFFFF9D9D : LINE);
+        rect(context, x, y, X_SIZE, X_SIZE, 0, hovered ? 0xFFE65252 : PremiumRender.SHOP_BUTTON);
+        outline(context, x, y, X_SIZE, X_SIZE, 0, hovered ? 0xFFFF9D9D : LINE);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("×"), x + X_SIZE / 2, y + 3, WHITE);
     }
 
     private void renderScaleHandle(DrawContext context, Bounds b, int accent, boolean hovered) {
         int x = b.x + b.w - HANDLE / 2;
         int y = b.y + b.h - HANDLE / 2;
-        rect(context, x, y, HANDLE, HANDLE, 5, hovered ? accent : ClientTheme.withAlpha(accent, 210));
-        outline(context, x, y, HANDLE, HANDLE, 5, 0xFFFFFFFF);
+        rect(context, x, y, HANDLE, HANDLE, 0, hovered ? accent : ClientTheme.withAlpha(accent, 210));
+        outline(context, x, y, HANDLE, HANDLE, 0, 0xFFFFFFFF);
     }
 
     @Override
@@ -441,8 +442,8 @@ public class HudEditorScreen extends ResponsiveScreen {
     }
 
     private void tinyToggle(DrawContext context, int x, int y, int w, int h, String label, boolean active, int accent) {
-        rect(context, x, y, w, h, 7, active ? ClientTheme.withAlpha(accent, 155) : 0xBB080D15);
-        outline(context, x, y, w, h, 7, active ? accent : LINE);
+        rect(context, x, y, w, h, 0, active ? PremiumRender.SHOP_BUTTON_ACTIVE : PremiumRender.SHOP_BUTTON);
+        outline(context, x, y, w, h, 0, active ? accent : LINE);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), x + w / 2, y + 12, WHITE);
     }
 
@@ -451,8 +452,8 @@ public class HudEditorScreen extends ResponsiveScreen {
         int w = textRenderer.getWidth(status) + 26;
         int x = (width - w) / 2;
         int y = height - 34;
-        rect(context, x, y, w, 22, 8, 0xCC070B12);
-        outline(context, x, y, w, 22, 8, LINE);
+        rect(context, x, y, w, 22, 0, PremiumRender.SHOP_HEADER);
+        outline(context, x, y, w, 22, 0, LINE);
         context.drawTextWithShadow(textRenderer, Text.literal(status), x + 13, y + 8, MUTED);
     }
 
