@@ -34,7 +34,7 @@ public class HatRenderer extends FeatureRenderer<PlayerEntityRenderState, Player
             float limbAngle,
             float limbDistance
     ) {
-        if (state.invisible || !isEnabled()) {
+        if (state.invisible || !isEnabled(state.id)) {
             return;
         }
 
@@ -89,7 +89,11 @@ public class HatRenderer extends FeatureRenderer<PlayerEntityRenderState, Player
                 .orElse(null);
     }
 
-    private static boolean isEnabled() {
+    private static boolean isEnabled(int stateId) {
+        if (CosmeticPreviewContext.activeForState(stateId)) {
+            return true;
+        }
+
         if (S9LabClientClient.getModuleManager() == null) {
             return false;
         }
@@ -98,6 +102,6 @@ public class HatRenderer extends FeatureRenderer<PlayerEntityRenderState, Player
                 .getModule("Hat")
                 .orElse(null);
 
-        return CosmeticPreviewContext.active() || (module != null && module.isEnabled());
+        return module != null && module.isEnabled();
     }
 }

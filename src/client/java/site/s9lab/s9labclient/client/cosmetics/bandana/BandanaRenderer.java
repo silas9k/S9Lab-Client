@@ -33,7 +33,7 @@ public class BandanaRenderer extends FeatureRenderer<PlayerEntityRenderState, Pl
             float limbAngle,
             float limbDistance
     ) {
-        if (state.invisible || !isEnabled()) {
+        if (state.invisible || !isEnabled(state.id)) {
             return;
         }
 
@@ -73,7 +73,11 @@ public class BandanaRenderer extends FeatureRenderer<PlayerEntityRenderState, Pl
         matrices.pop();
     }
 
-    private static boolean isEnabled() {
+    private static boolean isEnabled(int stateId) {
+        if (CosmeticPreviewContext.activeForState(stateId)) {
+            return true;
+        }
+
         if (S9LabClientClient.getModuleManager() == null) {
             return false;
         }
@@ -82,7 +86,7 @@ public class BandanaRenderer extends FeatureRenderer<PlayerEntityRenderState, Pl
                 .getModule("Bandana")
                 .orElse(null);
 
-        return CosmeticPreviewContext.active() || (module != null && module.isEnabled());
+        return module != null && module.isEnabled();
     }
 
     private static double number(Module module, String name, double fallback) {

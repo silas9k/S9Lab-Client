@@ -38,7 +38,12 @@ public final class HatGeoRenderHook {
             OrderedRenderCommandQueue queue,
             Object cameraState
     ) {
-        if (state.invisible || !isEnabled()) {
+        if (state.invisible || !isEnabled(state.id)) {
+            return;
+        }
+        // Card/studio previews use the deterministic vanilla feature renderer.
+        // Avoid queuing a second hard-coded pirate hat on top of every preview hat.
+        if (CosmeticPreviewContext.activeForState(state.id)) {
             return;
         }
 
@@ -123,7 +128,11 @@ public final class HatGeoRenderHook {
         throw new NoSuchMethodException("Could not find GeckoLib performRenderPass method");
     }
 
-    private static boolean isEnabled() {
+    private static boolean isEnabled(int stateId) {
+        if (CosmeticPreviewContext.activeForState(stateId)) {
+            return true;
+        }
+
         if (S9LabClientClient.getModuleManager() == null) {
             return false;
         }
@@ -132,6 +141,6 @@ public final class HatGeoRenderHook {
                 .getModule("Hat")
                 .orElse(null);
 
-        return CosmeticPreviewContext.active() || (module != null && module.isEnabled());
+        return module != null && module.isEnabled();
     }
 }

@@ -10,7 +10,6 @@ import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.input.CharInput;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
@@ -21,7 +20,10 @@ import site.s9lab.s9labclient.client.backend.BackendClient;
 import site.s9lab.s9labclient.client.backend.BackendState;
 import site.s9lab.s9labclient.client.cosmetics.Cosmetic;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticPreviewContext;
+import site.s9lab.s9labclient.client.cosmetics.CosmeticPreviewContext.BaseVisibility;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticType;
+import site.s9lab.s9labclient.client.cosmetics.preview.CosmeticPreviewRenderer;
+import site.s9lab.s9labclient.client.cosmetics.preview.PreviewPose;
 import site.s9lab.s9labclient.client.module.HudModule;
 import site.s9lab.s9labclient.client.module.Module;
 import site.s9lab.s9labclient.client.module.ModuleCategory;
@@ -79,6 +81,8 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private float previewYaw = 180.0F;
     private float previewPitch = 8.0F;
     private int previewZoom = 78;
+    private PreviewPose previewPose = PreviewPose.IDLE;
+    private boolean previewTryOn;
     private boolean searchFocused;
     private String search = "";
     private boolean sortAscending = true;
@@ -470,9 +474,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
         }
         int buttonH = Math.min(24, parts.footerH - 12);
         int y = parts.y + parts.height - parts.footerH + (parts.footerH - buttonH) / 2;
-        int gap = 8;
-        int[] widths = new int[] {70, 86, 96, 86};
-        int total = widths[0] + widths[1] + widths[2] + widths[3] + gap * 3;
+        int gap = 7;
+        int[] widths = new int[] {62, 78, 88, 78};
+        int socialW = 76;
+        int total = widths[0] + widths[1] + widths[2] + widths[3] + socialW + gap * 4;
         int x = parts.x + Math.max(8, (parts.width - total) / 2);
         ClientTab[] tabs = visibleTabs();
         for (int i = 0; i < tabs.length; i++) {
@@ -480,6 +485,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
             renderSquareButton(context, x, y, widths[i], buttonH, tab.label.toUpperCase(Locale.ROOT), selectedTab == tab, mouseX, mouseY, accent);
             x += widths[i] + gap;
         }
+        String social = BackendState.totalUnreadFriendMessages() > 0
+                ? "SOCIAL " + Math.min(99, BackendState.totalUnreadFriendMessages())
+                : "SOCIAL";
+        renderSquareButton(context, x, y, socialW, buttonH, social, false, mouseX, mouseY, accent);
     }
 
     private void renderModsCatalog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
@@ -1143,31 +1152,31 @@ public class S9LabClientScreen extends ResponsiveScreen {
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
-            CosmeticPreviewContext.begin(cosmetic);
-            try {
-                InventoryScreen.drawEntity(
-                        context,
-                        previewX + Math.max(28, previewW / 6),
-                        previewY + 58,
-                        previewX + previewW - Math.max(28, previewW / 6),
-                        previewY + previewH - 72,
-                        previewZoom,
-                        0.0F,
-                        previewYaw,
-                        previewPitch,
-                        client.player
-                );
-            } finally {
-                CosmeticPreviewContext.end();
-            }
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), previewX + previewW / 2, previewY + previewH - 62, 0xCFE7EAF2);
+            CosmeticPreviewRenderer.draw(
+                    context,
+                    client.player,
+                    cosmetic,
+                    previewTryOn,
+                    previewPose,
+                    previewX + Math.max(28, previewW / 6),
+                    previewY + 54,
+                    previewX + previewW - Math.max(28, previewW / 6),
+                    previewY + previewH - 88,
+                    previewZoom,
+                    previewYaw,
+                    previewPitch,
+                    CosmeticPreviewContext.stableKey("details", cosmetic),
+                    BaseVisibility.FULL
+            );
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), previewX + previewW / 2, previewY + previewH - 91, 0xCFE7EAF2);
         } else {
-            drawCosmeticTexture(context, cosmetic, previewX + previewW / 2 - 48, previewY + previewH / 2 - 48, 96, 96, accent);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Join a world for 3D preview"), previewX + previewW / 2, previewY + previewH / 2 + 58, MUTED);
+            drawCosmeticTexture(context, cosmetic, previewX + previewW / 2 - 48, previewY + previewH / 2 - 58, 96, 96, accent);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Join a world for 3D preview"), previewX + previewW / 2, previewY + previewH / 2 + 38, MUTED);
         }
 
         context.drawTextWithShadow(textRenderer, Text.literal("<"), previewX + 14, previewY + previewH / 2, WHITE);
         context.drawTextWithShadow(textRenderer, Text.literal(">"), previewX + previewW - 22, previewY + previewH / 2, WHITE);
+        renderPreviewControls(context, previewX, previewY + previewH - 78, previewW, mouseX, mouseY, accent);
 
         int buttonY = previewY + previewH - 36;
         int buttonW = Math.min(260, previewW - 40);
@@ -1334,7 +1343,35 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int previewY = y + 18;
         int previewW = width - 20;
         int previewH = height - 38;
-        drawCosmeticTexture(context, cosmetic, previewX, previewY, previewW, previewH, accent);
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (cosmetic.type() == CosmeticType.CAPE) {
+            // Cape cards intentionally bypass queued entity feature rendering.
+            // The fake player is supposed to be invisible here, so rendering the
+            // actual cape face directly is both deterministic and much cheaper.
+            renderCapeCardPreview(context, cosmetic, previewX, previewY, previewW, previewH);
+        } else if (client.player != null) {
+            float cardYaw = switch (cosmetic.type()) {
+                case WINGS -> 0.0F;
+                default -> 180.0F;
+            };
+            BaseVisibility cardVisibility = switch (cosmetic.type()) {
+                case WINGS -> BaseVisibility.HIDDEN;
+                case HAT, HALO, BANDANA -> BaseVisibility.HEAD_ONLY;
+                default -> BaseVisibility.FULL;
+            };
+            int baseScale = Math.max(28, Math.min(62, Math.min(previewW, previewH) / 2));
+            int cardScale = cardVisibility == BaseVisibility.HEAD_ONLY
+                    ? Math.min(96, baseScale + 28)
+                    : baseScale;
+            int previewKey = CosmeticPreviewContext.stableKey("card", cosmetic);
+            CosmeticPreviewRenderer.draw(
+                    context, client.player, cosmetic, true, PreviewPose.IDLE,
+                    previewX, previewY, previewX + previewW, previewY + previewH,
+                    cardScale, cardYaw, 5.0F, previewKey, cardVisibility
+            );
+        } else {
+            drawCosmeticTexture(context, cosmetic, previewX, previewY, previewW, previewH, accent);
+        }
 
         int badgeW = owned ? 58 : Math.min(width - 26, Math.max(52, textRenderer.getWidth(shop.price() + "✦") + 12));
         int badgeX = x + Math.max(6, (width - badgeW) / 2 - 7);
@@ -1352,6 +1389,61 @@ public class S9LabClientScreen extends ResponsiveScreen {
         }
     }
 
+
+
+    private void renderCapeCardPreview(
+            DrawContext context,
+            Cosmetic cosmetic,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        if (cosmetic == null || cosmetic.texture() == null || width <= 0 || height <= 0) {
+            return;
+        }
+
+        // Minecraft cape textures use a 64x32 layout. These project textures are
+        // exported at 2048x1024 (32x scale), so the visible back face is the
+        // 10x16 area starting at 1,1 -> 320x512 pixels starting at 32,32.
+        final int textureWidth = 2048;
+        final int textureHeight = 1024;
+        final int sourceX = 32;
+        final int sourceY = 32;
+        final int sourceWidth = 320;
+        final int sourceHeight = 512;
+
+        int availableW = Math.max(1, width - 28);
+        int availableH = Math.max(1, height - 18);
+        float aspect = sourceWidth / (float) sourceHeight;
+        int drawH = availableH;
+        int drawW = Math.max(1, Math.round(drawH * aspect));
+        if (drawW > availableW) {
+            drawW = availableW;
+            drawH = Math.max(1, Math.round(drawW / aspect));
+        }
+
+        int drawX = x + (width - drawW) / 2;
+        int drawY = y + (height - drawH) / 2;
+
+        // Small depth shadow, then the real cape face. No player model is drawn.
+        context.fill(drawX + 3, drawY + 4, drawX + drawW + 3, drawY + drawH + 4, 0x46000000);
+        context.drawTexture(
+                RenderPipelines.GUI_TEXTURED,
+                cosmetic.texture(),
+                drawX,
+                drawY,
+                sourceX,
+                sourceY,
+                drawW,
+                drawH,
+                sourceWidth,
+                sourceHeight,
+                textureWidth,
+                textureHeight
+        );
+        outline(context, drawX, drawY, drawW, drawH, 0, 0x557B8495);
+    }
 
     private void drawCosmeticTexture(DrawContext context, Cosmetic cosmetic, int x, int y, int width, int height, int accent) {
         try {
@@ -1393,32 +1485,32 @@ public class S9LabClientScreen extends ResponsiveScreen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, state, width - 18)), x + width / 2, y + 10, BackendState.online() ? 0xDDFFFFFF : WARN);
 
         int boxY = y + 54;
-        int boxH = Math.max(80, height - 112);
+        int boxH = Math.max(64, height - 148);
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
-            CosmeticPreviewContext.begin(cosmetic);
-            try {
-                InventoryScreen.drawEntity(
-                        context,
-                        x + 24,
-                        boxY + 10,
-                        x + width - 24,
-                        boxY + boxH - 8,
-                        previewZoom,
-                        0.0F,
-                        previewYaw,
-                        previewPitch,
-                        client.player
-                );
-            } finally {
-                CosmeticPreviewContext.end();
-            }
+            CosmeticPreviewRenderer.draw(
+                    context,
+                    client.player,
+                    cosmetic,
+                    previewTryOn,
+                    previewPose,
+                    x + 20,
+                    boxY + 4,
+                    x + width - 20,
+                    boxY + boxH,
+                    previewZoom,
+                    previewYaw,
+                    previewPitch,
+                    CosmeticPreviewContext.stableKey("panel", cosmetic),
+                    BaseVisibility.FULL
+            );
             if (height > 260) {
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), x + width / 2, boxY + boxH - 14, 0xBFE7EAF2);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal("DRAG / SCROLL"), x + width / 2, boxY + boxH - 12, 0xBFE7EAF2);
             }
         } else {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("Join a world for 3D preview"), x + width / 2, boxY + boxH / 2, MUTED);
         }
+        renderPreviewControls(context, x, y + height - 78, width, -1, -1, accent);
 
         int buttonY = y + height - 46;
         String status = cosmeticActionLabel(cosmetic);
@@ -1435,6 +1527,45 @@ public class S9LabClientScreen extends ResponsiveScreen {
             rect(context, x + 16, buttonY, width - 32, 28, 0, disabled ? 0x55151A25 : ClientTheme.withAlpha(accent, 210));
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), x + width / 2, buttonY + 10, WHITE);
         }
+    }
+
+    private void renderPreviewControls(DrawContext context, int x, int y, int width, int mouseX, int mouseY, int accent) {
+        int gap = 4;
+        int buttonW = Math.max(28, (width - 24 - gap * 3) / 4);
+        int startX = x + 12;
+        String tryOn = previewTryOn ? "TRY ON ✓" : "TRY ON";
+        renderSquareButton(context, startX, y, buttonW, 24, tryOn, previewTryOn, mouseX, mouseY, accent);
+        renderSquareButton(context, startX + buttonW + gap, y, buttonW, 24, "POSE " + previewPose.label().toUpperCase(Locale.ROOT), false, mouseX, mouseY, accent);
+        renderSquareButton(context, startX + (buttonW + gap) * 2, y, buttonW, 24, "RESET", false, mouseX, mouseY, accent);
+        renderSquareButton(context, startX + (buttonW + gap) * 3, y, buttonW, 24, "STUDIO", false, mouseX, mouseY, accent);
+    }
+
+    private boolean handlePreviewControlsClick(Rect bounds, int mouseX, int mouseY) {
+        if (bounds.width <= 0 || selectedCosmetic == null) {
+            return false;
+        }
+        int gap = 4;
+        int buttonW = Math.max(28, (bounds.width - 24 - gap * 3) / 4);
+        int startX = bounds.x + 12;
+        int y = bounds.y + bounds.height - 78;
+        if (inside(mouseX, mouseY, startX, y, buttonW, 24)) {
+            previewTryOn = !previewTryOn;
+            return true;
+        }
+        if (inside(mouseX, mouseY, startX + buttonW + gap, y, buttonW, 24)) {
+            previewPose = previewPose.next();
+            return true;
+        }
+        if (inside(mouseX, mouseY, startX + (buttonW + gap) * 2, y, buttonW, 24)) {
+            resetPreviewCamera();
+            previewPose = PreviewPose.IDLE;
+            return true;
+        }
+        if (inside(mouseX, mouseY, startX + (buttonW + gap) * 3, y, buttonW, 24)) {
+            MinecraftClient.getInstance().setScreen(new CosmeticPreviewStudioScreen(this, selectedCosmetic));
+            return true;
+        }
+        return false;
     }
 
     private void renderGiftDialog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
@@ -1521,9 +1652,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
         }
         int buttonH = Math.min(24, parts.footerH - 12);
         int y = parts.y + parts.height - parts.footerH + (parts.footerH - buttonH) / 2;
-        int gap = 8;
-        int[] widths = new int[] {70, 86, 96, 86};
-        int total = widths[0] + widths[1] + widths[2] + widths[3] + gap * 3;
+        int gap = 7;
+        int[] widths = new int[] {62, 78, 88, 78};
+        int socialW = 76;
+        int total = widths[0] + widths[1] + widths[2] + widths[3] + socialW + gap * 4;
         int x = parts.x + Math.max(8, (parts.width - total) / 2);
         ClientTab[] tabs = visibleTabs();
         for (int i = 0; i < tabs.length; i++) {
@@ -1538,6 +1670,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
                 return true;
             }
             x += widths[i] + gap;
+        }
+        if (inside(mouseX, mouseY, x, y, socialW, buttonH)) {
+            MinecraftClient.getInstance().setScreen(new FriendsOverlayScreen(this));
+            return true;
         }
         return false;
     }
@@ -2046,6 +2182,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (preview.width <= 0) {
             return false;
         }
+        if (handlePreviewControlsClick(preview, mouseX, mouseY)) {
+            return true;
+        }
         int actionY = preview.y + preview.height - 46;
         boolean owned = selectedCosmetic != null && BackendState.owned(selectedCosmetic.id());
         if (owned) {
@@ -2102,6 +2241,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
         }
         if (inside(mouseX, mouseY, bounds.x + bounds.width - 42, bounds.y + bounds.height / 2 - 18, 34, 42)) {
             selectAdjacentCosmeticVariant(1);
+            return true;
+        }
+        if (handlePreviewControlsClick(bounds, mouseX, mouseY)) {
             return true;
         }
         int buttonW = Math.min(260, bounds.width - 40);
@@ -2289,14 +2431,16 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private void resetPreviewForCosmeticType(CosmeticType type) {
+        previewTryOn = true;
+        previewPose = PreviewPose.IDLE;
         previewZoom = switch (type) {
             case CAPE, WINGS -> 82;
             case HALO, HAT, GLINT, EMOTE -> 96;
             default -> 78;
         };
         previewYaw = switch (type) {
-            case CAPE, WINGS -> 180.0F;
-            default -> 25.0F;
+            case CAPE, WINGS -> 0.0F;
+            default -> 180.0F;
         };
         previewPitch = switch (type) {
             case HALO, HAT -> -8.0F;

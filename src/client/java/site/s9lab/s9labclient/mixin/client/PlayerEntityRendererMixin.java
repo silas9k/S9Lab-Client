@@ -20,6 +20,7 @@ import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.backend.BackendState;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticResolver;
 import site.s9lab.s9labclient.client.cosmetics.bandana.BandanaRenderer;
+import site.s9lab.s9labclient.client.cosmetics.cape.CapeRenderer;
 import site.s9lab.s9labclient.client.cosmetics.glint.BodyGlintRenderer;
 import site.s9lab.s9labclient.client.cosmetics.halo.HaloRenderer;
 import site.s9lab.s9labclient.client.cosmetics.hat.HatRenderer;
@@ -43,6 +44,7 @@ public abstract class PlayerEntityRendererMixin {
                 (FeatureRendererContext<PlayerEntityRenderState, PlayerEntityModel>) (Object) this;
 
         ((LivingEntityRendererAccessor) this).s9labclient$addFeature(new BandanaRenderer(featureContext));
+        ((LivingEntityRendererAccessor) this).s9labclient$addFeature(new CapeRenderer(featureContext, context.getEntityModels()));
         ((LivingEntityRendererAccessor) this).s9labclient$addFeature(new HatRenderer(featureContext));
 
         ((LivingEntityRendererAccessor) this).s9labclient$addFeature(new HaloRenderer(featureContext));

@@ -39,7 +39,7 @@ public final class WingRenderer extends FeatureRenderer<PlayerEntityRenderState,
             float limbAngle,
             float limbDistance
     ) {
-        if (state.invisible || !isEnabled()) {
+        if (state.invisible || !isEnabled(state.id)) {
             return;
         }
 
@@ -107,13 +107,17 @@ public final class WingRenderer extends FeatureRenderer<PlayerEntityRenderState,
         matrices.pop();
     }
 
-    private static boolean isEnabled() {
+    private static boolean isEnabled(int stateId) {
+        if (CosmeticPreviewContext.activeForState(stateId)) {
+            return true;
+        }
+
         if (S9LabClientClient.getModuleManager() == null) {
             return false;
         }
 
         Module module = S9LabClientClient.getModuleManager().getModule("Wings").orElse(null);
-        return CosmeticPreviewContext.active() || (module != null && module.isEnabled());
+        return module != null && module.isEnabled();
     }
 
     private static double number(Module module, String name, double fallback) {

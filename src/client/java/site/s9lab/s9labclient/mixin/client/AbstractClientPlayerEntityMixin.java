@@ -19,12 +19,15 @@ import site.s9lab.s9labclient.client.module.Module;
 public class AbstractClientPlayerEntityMixin {
     @Inject(method = "getSkin", at = @At("RETURN"), cancellable = true)
     private void s9labclient$applyCape(CallbackInfoReturnable<SkinTextures> cir) {
-        if (S9LabClientClient.getModuleManager() == null) {
+        boolean preview = CosmeticPreviewContext.active();
+        if (!preview && S9LabClientClient.getModuleManager() == null) {
             return;
         }
 
-        Module capeModule = S9LabClientClient.getModuleManager().getModule("Cape").orElse(null);
-        if (!CosmeticPreviewContext.active() && (capeModule == null || !capeModule.isEnabled())) {
+        Module capeModule = S9LabClientClient.getModuleManager() == null
+                ? null
+                : S9LabClientClient.getModuleManager().getModule("Cape").orElse(null);
+        if (!preview && (capeModule == null || !capeModule.isEnabled())) {
             return;
         }
 

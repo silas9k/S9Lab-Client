@@ -142,6 +142,42 @@ public final class DatabaseManager implements AutoCloseable {
                 )
                 """);
         execute("""
+                CREATE TABLE IF NOT EXISTS friendships (
+                    user_low TEXT NOT NULL,
+                    user_high TEXT NOT NULL,
+                    requester_uuid TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (user_low, user_high),
+                    FOREIGN KEY (user_low) REFERENCES players(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (user_high) REFERENCES players(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (requester_uuid) REFERENCES players(uuid) ON DELETE CASCADE
+                )
+                """);
+        execute("""
+                CREATE TABLE IF NOT EXISTS friend_preferences (
+                    owner_uuid TEXT NOT NULL,
+                    friend_uuid TEXT NOT NULL,
+                    favorite INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (owner_uuid, friend_uuid),
+                    FOREIGN KEY (owner_uuid) REFERENCES players(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (friend_uuid) REFERENCES players(uuid) ON DELETE CASCADE
+                )
+                """);
+        execute("""
+                CREATE TABLE IF NOT EXISTS friend_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_uuid TEXT NOT NULL,
+                    receiver_uuid TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    sent_at INTEGER NOT NULL,
+                    read INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (sender_uuid) REFERENCES players(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (receiver_uuid) REFERENCES players(uuid) ON DELETE CASCADE
+                )
+                """);
+        execute("""
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at INTEGER NOT NULL,
@@ -158,11 +194,16 @@ public final class DatabaseManager implements AutoCloseable {
         execute("CREATE INDEX IF NOT EXISTS idx_cosmetic_gifts_sender ON cosmetic_gifts(sender_uuid)");
         execute("CREATE INDEX IF NOT EXISTS idx_cosmetic_gifts_receiver ON cosmetic_gifts(receiver_uuid)");
         execute("CREATE INDEX IF NOT EXISTS idx_notifications_receiver_read ON notifications(receiver_uuid, read, created_at)");
+        execute("CREATE INDEX IF NOT EXISTS idx_friendships_low_status ON friendships(user_low, status)");
+        execute("CREATE INDEX IF NOT EXISTS idx_friendships_high_status ON friendships(user_high, status)");
+        execute("CREATE INDEX IF NOT EXISTS idx_friend_messages_pair ON friend_messages(sender_uuid, receiver_uuid, sent_at)");
+        execute("CREATE INDEX IF NOT EXISTS idx_friend_messages_unread ON friend_messages(receiver_uuid, read, sent_at)");
         execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)");
         migrateColumn("players", "rank", "TEXT NOT NULL DEFAULT 'USER'");
         migrateColumn("players", "plus_expires_at", "INTEGER NOT NULL DEFAULT 0");
         migrateColumn("players", "name_effects_enabled", "INTEGER NOT NULL DEFAULT 0");
         migrateColumn("players", "name_effects", "TEXT NOT NULL DEFAULT ''");
+        migrateColumn("players", "status", "TEXT NOT NULL DEFAULT 'Offline'");
         migrateColumn("cosmetics", "rarity", "TEXT NOT NULL DEFAULT 'COMMON'");
         migrateColumn("cosmetics", "limited", "INTEGER NOT NULL DEFAULT 0");
         migrateColumn("cosmetics", "available_from", "INTEGER NOT NULL DEFAULT 0");
@@ -225,19 +266,24 @@ public final class DatabaseManager implements AutoCloseable {
         }
     }
 
-    public synchronized void heartbeat(String uuid, String name, long playtimeSeconds, boolean online) throws SQLException {
+    public synchronized void heartbeat(String uuid, String name, long playtimeSeconds, boolean online, String status) throws SQLException {
         ensurePlayer(uuid, name);
         try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE players
-                SET last_seen = ?, total_playtime_seconds = MAX(total_playtime_seconds, ?), online = ?
+                SET last_seen = ?, total_playtime_seconds = MAX(total_playtime_seconds, ?), online = ?, status = ?
                 WHERE uuid = ?
                 """)) {
             statement.setLong(1, now());
             statement.setLong(2, Math.max(0, playtimeSeconds));
             statement.setInt(3, online ? 1 : 0);
-            statement.setString(4, uuid);
+            statement.setString(4, online ? limit(status, 120, "Online") : "Offline");
+            statement.setString(5, uuid);
             statement.executeUpdate();
         }
+    }
+
+    public synchronized void heartbeat(String uuid, String name, long playtimeSeconds, boolean online) throws SQLException {
+        heartbeat(uuid, name, playtimeSeconds, online, online ? "Online" : "Offline");
     }
 
     public synchronized Dtos.PlayerAdminResponse profile(String uuid) throws SQLException {
@@ -794,10 +840,11 @@ public final class DatabaseManager implements AutoCloseable {
     }
 
     public synchronized void setOnline(String uuid, boolean online) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE players SET online = ?, last_seen = ? WHERE uuid = ?")) {
+        try (PreparedStatement statement = connection.prepareStatement("UPDATE players SET online = ?, last_seen = ?, status = CASE WHEN ? = 1 THEN status ELSE 'Offline' END WHERE uuid = ?")) {
             statement.setInt(1, online ? 1 : 0);
             statement.setLong(2, now());
-            statement.setString(3, uuid);
+            statement.setInt(3, online ? 1 : 0);
+            statement.setString(4, uuid);
             statement.executeUpdate();
         }
     }
@@ -840,6 +887,316 @@ public final class DatabaseManager implements AutoCloseable {
                 return result.next() ? Optional.of(result.getString("emote_id")) : Optional.empty();
             }
         }
+    }
+
+    public synchronized Dtos.FriendsResponse friends(String ownerUuid) throws SQLException {
+        List<Dtos.FriendDto> friends = new ArrayList<>();
+        for (String friendUuid : acceptedFriendUuids(ownerUuid)) {
+            Dtos.FriendDto friend = friendForOwner(ownerUuid, friendUuid);
+            if (friend != null) {
+                friends.add(friend);
+            }
+        }
+        friends.sort((left, right) -> {
+            int favorite = Boolean.compare(right.favorite(), left.favorite());
+            if (favorite != 0) return favorite;
+            int online = Boolean.compare(right.online(), left.online());
+            if (online != 0) return online;
+            return left.name().compareToIgnoreCase(right.name());
+        });
+
+        List<Dtos.FriendRequestDto> incoming = new ArrayList<>();
+        List<Dtos.FriendRequestDto> outgoing = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT f.requester_uuid, f.created_at,
+                       CASE WHEN f.user_low = ? THEN f.user_high ELSE f.user_low END AS other_uuid,
+                       p.name AS other_name
+                FROM friendships f
+                JOIN players p ON p.uuid = CASE WHEN f.user_low = ? THEN f.user_high ELSE f.user_low END
+                WHERE (f.user_low = ? OR f.user_high = ?) AND f.status = 'PENDING'
+                ORDER BY f.created_at DESC
+                """)) {
+            statement.setString(1, ownerUuid);
+            statement.setString(2, ownerUuid);
+            statement.setString(3, ownerUuid);
+            statement.setString(4, ownerUuid);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    Dtos.FriendRequestDto request = new Dtos.FriendRequestDto(
+                            result.getString("other_uuid"),
+                            blank(result.getString("other_name"), "Unknown"),
+                            result.getLong("created_at")
+                    );
+                    if (ownerUuid.equals(result.getString("requester_uuid"))) {
+                        outgoing.add(request);
+                    } else {
+                        incoming.add(request);
+                    }
+                }
+            }
+        }
+        return new Dtos.FriendsResponse(true, List.copyOf(friends), List.copyOf(incoming), List.copyOf(outgoing));
+    }
+
+    public synchronized boolean addFriendRequest(String ownerUuid, String targetUuid) throws SQLException {
+        if (ownerUuid.equals(targetUuid)) {
+            throw new IllegalArgumentException("cannot_friend_self");
+        }
+        if (profile(targetUuid) == null) {
+            throw new IllegalArgumentException("player_not_found");
+        }
+        String low = pairLow(ownerUuid, targetUuid);
+        String high = pairHigh(ownerUuid, targetUuid);
+        try (PreparedStatement select = connection.prepareStatement("SELECT requester_uuid, status FROM friendships WHERE user_low = ? AND user_high = ?")) {
+            select.setString(1, low);
+            select.setString(2, high);
+            try (ResultSet result = select.executeQuery()) {
+                if (result.next()) {
+                    String status = result.getString("status");
+                    String requester = result.getString("requester_uuid");
+                    if ("ACCEPTED".equalsIgnoreCase(status)) {
+                        throw new IllegalArgumentException("already_friends");
+                    }
+                    if ("PENDING".equalsIgnoreCase(status) && targetUuid.equals(requester)) {
+                        try (PreparedStatement accept = connection.prepareStatement("UPDATE friendships SET status = 'ACCEPTED', updated_at = ? WHERE user_low = ? AND user_high = ?")) {
+                            accept.setLong(1, now());
+                            accept.setString(2, low);
+                            accept.setString(3, high);
+                            accept.executeUpdate();
+                        }
+                        audit(ownerUuid, targetUuid, "friend_auto_accept", "");
+                        return true;
+                    }
+                    throw new IllegalArgumentException("friend_request_pending");
+                }
+            }
+        }
+        long now = now();
+        try (PreparedStatement insert = connection.prepareStatement("""
+                INSERT INTO friendships (user_low, user_high, requester_uuid, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'PENDING', ?, ?)
+                """)) {
+            insert.setString(1, low);
+            insert.setString(2, high);
+            insert.setString(3, ownerUuid);
+            insert.setLong(4, now);
+            insert.setLong(5, now);
+            insert.executeUpdate();
+        }
+        audit(ownerUuid, targetUuid, "friend_request", "");
+        return false;
+    }
+
+    public synchronized void respondFriendRequest(String ownerUuid, String requesterUuid, boolean accept) throws SQLException {
+        String low = pairLow(ownerUuid, requesterUuid);
+        String high = pairHigh(ownerUuid, requesterUuid);
+        try (PreparedStatement select = connection.prepareStatement("SELECT requester_uuid, status FROM friendships WHERE user_low = ? AND user_high = ?")) {
+            select.setString(1, low);
+            select.setString(2, high);
+            try (ResultSet result = select.executeQuery()) {
+                if (!result.next() || !"PENDING".equalsIgnoreCase(result.getString("status")) || !requesterUuid.equals(result.getString("requester_uuid"))) {
+                    throw new IllegalArgumentException("friend_request_not_found");
+                }
+            }
+        }
+        if (accept) {
+            try (PreparedStatement update = connection.prepareStatement("UPDATE friendships SET status = 'ACCEPTED', updated_at = ? WHERE user_low = ? AND user_high = ?")) {
+                update.setLong(1, now());
+                update.setString(2, low);
+                update.setString(3, high);
+                update.executeUpdate();
+            }
+            audit(ownerUuid, requesterUuid, "friend_accept", "");
+        } else {
+            try (PreparedStatement delete = connection.prepareStatement("DELETE FROM friendships WHERE user_low = ? AND user_high = ?")) {
+                delete.setString(1, low);
+                delete.setString(2, high);
+                delete.executeUpdate();
+            }
+            audit(ownerUuid, requesterUuid, "friend_decline", "");
+        }
+    }
+
+    public synchronized void removeFriend(String ownerUuid, String friendUuid) throws SQLException {
+        String low = pairLow(ownerUuid, friendUuid);
+        String high = pairHigh(ownerUuid, friendUuid);
+        try (PreparedStatement delete = connection.prepareStatement("DELETE FROM friendships WHERE user_low = ? AND user_high = ?")) {
+            delete.setString(1, low);
+            delete.setString(2, high);
+            if (delete.executeUpdate() == 0) {
+                throw new IllegalArgumentException("friend_not_found");
+            }
+        }
+        try (PreparedStatement preferences = connection.prepareStatement("DELETE FROM friend_preferences WHERE (owner_uuid = ? AND friend_uuid = ?) OR (owner_uuid = ? AND friend_uuid = ?)")) {
+            preferences.setString(1, ownerUuid);
+            preferences.setString(2, friendUuid);
+            preferences.setString(3, friendUuid);
+            preferences.setString(4, ownerUuid);
+            preferences.executeUpdate();
+        }
+        audit(ownerUuid, friendUuid, "friend_remove", "");
+    }
+
+    public synchronized void setFriendFavorite(String ownerUuid, String friendUuid, boolean favorite) throws SQLException {
+        if (!areFriends(ownerUuid, friendUuid)) {
+            throw new IllegalArgumentException("friend_not_found");
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO friend_preferences (owner_uuid, friend_uuid, favorite)
+                VALUES (?, ?, ?)
+                ON CONFLICT(owner_uuid, friend_uuid) DO UPDATE SET favorite = excluded.favorite
+                """)) {
+            statement.setString(1, ownerUuid);
+            statement.setString(2, friendUuid);
+            statement.setInt(3, favorite ? 1 : 0);
+            statement.executeUpdate();
+        }
+    }
+
+    public synchronized Dtos.FriendMessageDto sendFriendMessage(String senderUuid, String receiverUuid, String message) throws SQLException {
+        if (!areFriends(senderUuid, receiverUuid)) {
+            throw new IllegalArgumentException("friends_only");
+        }
+        String clean = limit(message == null ? "" : message.trim(), 240, "");
+        if (clean.isBlank()) {
+            throw new IllegalArgumentException("empty_message");
+        }
+        long sentAt = now();
+        long id;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO friend_messages (sender_uuid, receiver_uuid, message, sent_at, read)
+                VALUES (?, ?, ?, ?, 0)
+                """, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setString(1, senderUuid);
+            statement.setString(2, receiverUuid);
+            statement.setString(3, clean);
+            statement.setLong(4, sentAt);
+            statement.executeUpdate();
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                id = keys.next() ? keys.getLong(1) : 0L;
+            }
+        }
+        Dtos.PlayerAdminResponse sender = profile(senderUuid);
+        return new Dtos.FriendMessageDto(id, senderUuid, receiverUuid, sender == null ? "Unknown" : sender.name(), clean, sentAt, false);
+    }
+
+    public synchronized List<Dtos.FriendMessageDto> friendConversation(String ownerUuid, String friendUuid) throws SQLException {
+        if (!areFriends(ownerUuid, friendUuid)) {
+            throw new IllegalArgumentException("friends_only");
+        }
+        try (PreparedStatement markRead = connection.prepareStatement("UPDATE friend_messages SET read = 1 WHERE sender_uuid = ? AND receiver_uuid = ? AND read = 0")) {
+            markRead.setString(1, friendUuid);
+            markRead.setString(2, ownerUuid);
+            markRead.executeUpdate();
+        }
+        List<Dtos.FriendMessageDto> messages = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT m.*, p.name AS sender_name
+                FROM (
+                    SELECT * FROM friend_messages
+                    WHERE (sender_uuid = ? AND receiver_uuid = ?) OR (sender_uuid = ? AND receiver_uuid = ?)
+                    ORDER BY sent_at DESC, id DESC
+                    LIMIT 80
+                ) m
+                LEFT JOIN players p ON p.uuid = m.sender_uuid
+                ORDER BY m.sent_at ASC, m.id ASC
+                """)) {
+            statement.setString(1, ownerUuid);
+            statement.setString(2, friendUuid);
+            statement.setString(3, friendUuid);
+            statement.setString(4, ownerUuid);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    messages.add(friendMessage(result));
+                }
+            }
+        }
+        return List.copyOf(messages);
+    }
+
+    public synchronized List<String> acceptedFriendUuids(String ownerUuid) throws SQLException {
+        List<String> resultList = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT CASE WHEN user_low = ? THEN user_high ELSE user_low END AS friend_uuid
+                FROM friendships
+                WHERE (user_low = ? OR user_high = ?) AND status = 'ACCEPTED'
+                """)) {
+            statement.setString(1, ownerUuid);
+            statement.setString(2, ownerUuid);
+            statement.setString(3, ownerUuid);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    resultList.add(result.getString("friend_uuid"));
+                }
+            }
+        }
+        return List.copyOf(resultList);
+    }
+
+    public synchronized Dtos.FriendDto friendForOwner(String ownerUuid, String friendUuid) throws SQLException {
+        if (!areFriends(ownerUuid, friendUuid)) {
+            return null;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT p.uuid, p.name, p.online, p.last_seen, p.status,
+                       COALESCE((SELECT favorite FROM friend_preferences WHERE owner_uuid = ? AND friend_uuid = ?), 0) AS favorite,
+                       (SELECT COUNT(*) FROM friend_messages WHERE sender_uuid = ? AND receiver_uuid = ? AND read = 0) AS unread_messages
+                FROM players p
+                WHERE p.uuid = ?
+                """)) {
+            statement.setString(1, ownerUuid);
+            statement.setString(2, friendUuid);
+            statement.setString(3, friendUuid);
+            statement.setString(4, ownerUuid);
+            statement.setString(5, friendUuid);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                boolean online = result.getInt("online") == 1;
+                return new Dtos.FriendDto(
+                        result.getString("uuid"),
+                        blank(result.getString("name"), "Unknown"),
+                        online,
+                        result.getLong("last_seen"),
+                        online ? blank(result.getString("status"), "Online") : "Offline",
+                        result.getInt("favorite") == 1,
+                        result.getInt("unread_messages")
+                );
+            }
+        }
+    }
+
+    public synchronized boolean areFriends(String leftUuid, String rightUuid) throws SQLException {
+        String low = pairLow(leftUuid, rightUuid);
+        String high = pairHigh(leftUuid, rightUuid);
+        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM friendships WHERE user_low = ? AND user_high = ? AND status = 'ACCEPTED'")) {
+            statement.setString(1, low);
+            statement.setString(2, high);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static Dtos.FriendMessageDto friendMessage(ResultSet result) throws SQLException {
+        return new Dtos.FriendMessageDto(
+                result.getLong("id"),
+                result.getString("sender_uuid"),
+                result.getString("receiver_uuid"),
+                blank(result.getString("sender_name"), "Unknown"),
+                result.getString("message"),
+                result.getLong("sent_at"),
+                result.getInt("read") == 1
+        );
+    }
+
+    private static String pairLow(String left, String right) {
+        return left.compareTo(right) <= 0 ? left : right;
+    }
+
+    private static String pairHigh(String left, String right) {
+        return left.compareTo(right) <= 0 ? right : left;
     }
 
     private void execute(String sql) throws SQLException {
@@ -946,6 +1303,11 @@ public final class DatabaseManager implements AutoCloseable {
 
     private static long now() {
         return Instant.now().getEpochSecond();
+    }
+
+    private static String limit(String value, int maxLength, String fallback) {
+        String normalized = value == null ? fallback : value;
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
     }
 
     private static String blank(String value, String fallback) {

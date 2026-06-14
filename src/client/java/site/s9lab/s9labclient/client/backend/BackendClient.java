@@ -41,6 +41,9 @@ public final class BackendClient {
     private static final Type SETTINGS_MAP = new TypeToken<Map<String, Object>>() { }.getType();
     private static final Type CATALOG_LIST = new TypeToken<List<BackendState.ShopCosmetic>>() { }.getType();
     private static final Type NOTIFICATION_LIST = new TypeToken<List<BackendState.Notification>>() { }.getType();
+    private static final Type FRIEND_LIST = new TypeToken<List<BackendState.Friend>>() { }.getType();
+    private static final Type FRIEND_REQUEST_LIST = new TypeToken<List<BackendState.FriendRequest>>() { }.getType();
+    private static final Type FRIEND_MESSAGE_LIST = new TypeToken<List<BackendState.DirectMessage>>() { }.getType();
     private static final ProfileCache PROFILE_CACHE = new ProfileCache();
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
     private static ScheduledExecutorService executor;
@@ -194,6 +197,68 @@ public final class BackendClient {
         });
     }
 
+    public static void fetchFriendsAsync() {
+        executeGetJson("/friends", BackendClient::applyFriendsResponse, "Friends");
+    }
+
+    public static void addFriend(String target) {
+        JsonObject payload = new JsonObject();
+        try {
+            payload.addProperty("targetUuid", UUID.fromString(target == null ? "" : target.trim()).toString());
+            payload.addProperty("targetName", "");
+        } catch (RuntimeException exception) {
+            payload.addProperty("targetUuid", "");
+            payload.addProperty("targetName", target == null ? "" : target.trim());
+        }
+        executeJson("/friends/add", payload, json -> {
+            applyFriendsResponse(json);
+            S9ToastManager.success("Friend request", "Request sent");
+        }, "Friend request");
+    }
+
+    public static void respondFriendRequest(String requesterUuid, boolean accept) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("requesterUuid", requesterUuid == null ? "" : requesterUuid);
+        payload.addProperty("accept", accept);
+        executeJson("/friends/respond", payload, json -> {
+            applyFriendsResponse(json);
+            S9ToastManager.success("Friends", accept ? "Request accepted" : "Request declined");
+        }, "Friends");
+    }
+
+    public static void removeFriend(String friendUuid) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("friendUuid", friendUuid == null ? "" : friendUuid);
+        executeJson("/friends/remove", payload, json -> {
+            applyFriendsResponse(json);
+            S9ToastManager.success("Friends", "Friend removed");
+        }, "Friends");
+    }
+
+    public static void setFriendFavorite(String friendUuid, boolean favorite) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("friendUuid", friendUuid == null ? "" : friendUuid);
+        payload.addProperty("favorite", favorite);
+        executeJson("/friends/favorite", payload, BackendClient::applyFriendsResponse, "Friends");
+    }
+
+    public static void fetchFriendMessages(String friendUuid) {
+        if (friendUuid == null || friendUuid.isBlank()) {
+            return;
+        }
+        executeGetJson("/friends/messages/" + encode(friendUuid), BackendClient::applyFriendMessagesResponse, "Messages");
+    }
+
+    public static void sendFriendMessage(String friendUuid, String message) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("friendUuid", friendUuid == null ? "" : friendUuid);
+        payload.addProperty("message", message == null ? "" : message.trim());
+        executeJson("/friends/message", payload, json -> {
+            BackendState.DirectMessage directMessage = GSON.fromJson(json, BackendState.DirectMessage.class);
+            BackendState.applyFriendMessage(directMessage);
+        }, "Message");
+    }
+
     public static void pushSettingsAsync() {
         if (executor == null || !RUNNING.get() || sessionToken.isBlank() || S9LabClientClient.getConfigManager() == null) {
             return;
@@ -262,6 +327,75 @@ public final class BackendClient {
         payload.addProperty("uuid", identity.uuid());
         payload.addProperty("emoteId", "");
         postAction("/emotes/stop", payload);
+    }
+
+    private static void executeJson(String route, JsonObject payload, Consumer<JsonObject> success, String errorTitle) {
+        if (!enabled() || executor == null) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                SessionIdentity identity = identity();
+                if (identity == null || !ensureSession(identity)) {
+                    throw new IllegalStateException("No backend session");
+                }
+                JsonObject json = GSON.fromJson(request(route, payload), JsonObject.class);
+                if (json != null && success != null) {
+                    success.accept(json);
+                }
+            } catch (Exception exception) {
+                S9ToastManager.warning(errorTitle, readableBackendError(exception));
+                S9LabClient.LOGGER.debug("S9Lab request failed: " + route, exception);
+            }
+        });
+    }
+
+    private static void executeGetJson(String route, Consumer<JsonObject> success, String errorTitle) {
+        if (!enabled() || executor == null) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                SessionIdentity identity = identity();
+                if (identity == null || !ensureSession(identity)) {
+                    throw new IllegalStateException("No backend session");
+                }
+                JsonObject json = GSON.fromJson(get(route), JsonObject.class);
+                if (json != null && success != null) {
+                    success.accept(json);
+                }
+            } catch (Exception exception) {
+                S9ToastManager.warning(errorTitle, readableBackendError(exception));
+                S9LabClient.LOGGER.debug("S9Lab GET failed: " + route, exception);
+            }
+        });
+    }
+
+    private static void applyFriendsResponse(JsonObject json) {
+        if (json == null || !json.has("ok") || !json.get("ok").getAsBoolean()) {
+            return;
+        }
+        List<BackendState.Friend> friends = json.has("friends")
+                ? GSON.fromJson(json.get("friends"), FRIEND_LIST)
+                : List.of();
+        List<BackendState.FriendRequest> incoming = json.has("incomingRequests")
+                ? GSON.fromJson(json.get("incomingRequests"), FRIEND_REQUEST_LIST)
+                : List.of();
+        List<BackendState.FriendRequest> outgoing = json.has("outgoingRequests")
+                ? GSON.fromJson(json.get("outgoingRequests"), FRIEND_REQUEST_LIST)
+                : List.of();
+        BackendState.applyFriendsSnapshot(friends, incoming, outgoing);
+    }
+
+    private static void applyFriendMessagesResponse(JsonObject json) {
+        if (json == null || !json.has("ok") || !json.get("ok").getAsBoolean()) {
+            return;
+        }
+        String friendUuid = string(json, "friendUuid");
+        List<BackendState.DirectMessage> messages = json.has("messages")
+                ? GSON.fromJson(json.get("messages"), FRIEND_MESSAGE_LIST)
+                : List.of();
+        BackendState.applyConversation(friendUuid, messages);
     }
 
     private static void postAction(String route, JsonObject payload) {
@@ -365,7 +499,7 @@ public final class BackendClient {
             lastHandshake = Instant.EPOCH;
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("backend_http_" + response.statusCode());
+            throw new IllegalStateException(extractBackendError(response.statusCode(), response.body()));
         }
         return response.body();
     }
@@ -385,9 +519,40 @@ public final class BackendClient {
             lastHandshake = Instant.EPOCH;
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("backend_http_" + response.statusCode());
+            throw new IllegalStateException(extractBackendError(response.statusCode(), response.body()));
         }
         return response.body();
+    }
+
+    private static String extractBackendError(int statusCode, String body) {
+        try {
+            JsonObject json = GSON.fromJson(body, JsonObject.class);
+            if (json != null && json.has("error") && !json.get("error").isJsonNull()) {
+                String error = json.get("error").getAsString();
+                if (!error.isBlank()) {
+                    return error;
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return "backend_http_" + statusCode;
+    }
+
+    private static String readableBackendError(Exception exception) {
+        String value = exception == null || exception.getMessage() == null ? "request_failed" : exception.getMessage();
+        return switch (value) {
+            case "player_not_found" -> "Spieler wurde nicht gefunden";
+            case "cannot_friend_self" -> "Du kannst dich nicht selbst hinzufügen";
+            case "already_friends" -> "Ihr seid bereits Freunde";
+            case "friend_request_exists", "friend_request_pending" -> "Die Anfrage existiert bereits";
+            case "friend_request_not_found" -> "Die Freundschaftsanfrage wurde nicht gefunden";
+            case "not_friends", "friends_only", "friend_not_found" -> "Ihr seid nicht befreundet";
+            case "message_empty", "empty_message" -> "Die Nachricht ist leer";
+            case "message_too_long" -> "Die Nachricht ist zu lang";
+            case "invalid_uuid", "missing_uuid" -> "Ungültiger Spieler";
+            case "No backend session" -> "Backend-Verbindung wird aufgebaut";
+            default -> value.startsWith("backend_http_") ? "Backend-Fehler " + value.substring("backend_http_".length()) : value.replace('_', ' ');
+        };
     }
 
     private static void applyProfile(String body) {
@@ -555,6 +720,7 @@ public final class BackendClient {
         public void onOpen(WebSocket webSocket) {
             BackendClient.webSocket = webSocket;
             WEB_SOCKET_CONNECTING.set(false);
+            fetchFriendsAsync();
             webSocket.request(1);
         }
 
@@ -574,11 +740,65 @@ public final class BackendClient {
         private void handleSocketMessage(String message) {
             try {
                 JsonObject json = GSON.fromJson(message, JsonObject.class);
-                if (json == null || !json.has("event") || !json.has("uuid")) {
+                if (json == null || !json.has("event")) {
+                    return;
+                }
+                String event = json.get("event").getAsString();
+                if ("FriendsSnapshot".equals(event)) {
+                    applyFriendsResponse(json);
+                    return;
+                }
+                if ("FriendRequestReceived".equals(event)) {
+                    S9ToastManager.success("Freundschaftsanfrage", string(json, "name") + " möchte dein Freund sein");
+                    fetchFriendsAsync();
+                    return;
+                }
+                if ("FriendRequestAccepted".equals(event)) {
+                    S9ToastManager.success("Freunde", string(json, "name") + " hat deine Anfrage angenommen");
+                    fetchFriendsAsync();
+                    return;
+                }
+                if ("FriendStatusUpdate".equals(event)) {
+                    UUID friendUuid = UUID.fromString(string(json, "uuid"));
+                    boolean online = json.has("online") && json.get("online").getAsBoolean();
+                    String name = string(json, "name");
+                    boolean changed = BackendState.applyFriendPresence(
+                            friendUuid,
+                            name,
+                            online,
+                            longValue(json, "lastSeen"),
+                            string(json, "status")
+                    );
+                    if (changed) {
+                        S9ToastManager.push(
+                                "Freunde",
+                                (name.isBlank() ? "Ein Freund" : name) + (online ? " ist jetzt online" : " ist jetzt offline"),
+                                online ? 0xFF24FF4B : 0xFF8B9098
+                        );
+                    }
+                    return;
+                }
+                if ("FriendMessage".equals(event)) {
+                    if (json.has("message") && json.get("message").isJsonObject()) {
+                        BackendState.DirectMessage directMessage = GSON.fromJson(json.get("message"), BackendState.DirectMessage.class);
+                        UUID friendUuid = BackendState.applyFriendMessage(directMessage);
+                        SessionIdentity own = identity();
+                        if (directMessage != null && own != null && !own.uuid().equals(directMessage.senderUuid())) {
+                            String sender = directMessage.senderName() == null || directMessage.senderName().isBlank()
+                                    ? "Freund"
+                                    : directMessage.senderName();
+                            S9ToastManager.success(sender, directMessage.message());
+                        }
+                        if (friendUuid != null) {
+                            fetchFriendsAsync();
+                        }
+                    }
+                    return;
+                }
+                if (!json.has("uuid")) {
                     return;
                 }
                 UUID uuid = UUID.fromString(json.get("uuid").getAsString());
-                String event = json.get("event").getAsString();
                 if ("GiftReceived".equals(event) || "NotificationCreated".equals(event)) {
                     handleNotification(json);
                     return;
@@ -613,7 +833,8 @@ public final class BackendClient {
                     String emoteId = json.has("emoteId") ? json.get("emoteId").getAsString() : "";
                     BackendState.applyRemoteEmote(uuid, emoteId);
                 }
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                S9LabClient.LOGGER.debug("Ignored malformed backend websocket message", exception);
             }
         }
     }

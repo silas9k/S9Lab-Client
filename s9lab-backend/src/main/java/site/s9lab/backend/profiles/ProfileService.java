@@ -67,7 +67,7 @@ public final class ProfileService {
 
     public Dtos.ProfileResponse heartbeat(Dtos.HeartbeatRequest request) throws SQLException {
         String uuid = requireUuid(request.uuid());
-        database.heartbeat(uuid, request.name(), request.playtimeSeconds(), true);
+        database.heartbeat(uuid, request.name(), request.playtimeSeconds(), true, request.status());
         Dtos.PlayerAdminResponse profile = database.profile(uuid);
         return new Dtos.ProfileResponse(
                 true,

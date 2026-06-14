@@ -29,6 +29,7 @@ import site.s9lab.s9labclient.client.module.ModuleManager;
 import site.s9lab.s9labclient.client.resource.S9BuiltinResourcePacks;
 import site.s9lab.s9labclient.client.screenshot.ScreenshotManager;
 import site.s9lab.s9labclient.client.ui.EmoteWheelScreen;
+import site.s9lab.s9labclient.client.ui.FriendsOverlayScreen;
 import site.s9lab.s9labclient.client.ui.S9LabClientScreen;
 import site.s9lab.s9labclient.client.ui.SafeAccountScreen;
 import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
@@ -40,6 +41,7 @@ public class S9LabClientClient implements ClientModInitializer {
     private static CosmeticRegistry cosmeticRegistry;
     private static KeyBinding openMenuKey;
     private static KeyBinding openEmoteWheelKey;
+    private static KeyBinding openFriendsKey;
     private static KeyBinding zoomKey;
     private static Supplier<Screen> queuedScreen;
 
@@ -83,6 +85,12 @@ public class S9LabClientClient implements ClientModInitializer {
                 InputUtil.GLFW_KEY_B,
                 category
         ));
+        openFriendsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.s9labclient.open_friends",
+                InputUtil.Type.KEYSYM,
+                InputUtil.GLFW_KEY_O,
+                category
+        ));
         zoomKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.s9labclient.zoom",
                 InputUtil.Type.KEYSYM,
@@ -107,6 +115,14 @@ public class S9LabClientClient implements ClientModInitializer {
                     minecraftClient.setScreen(null);
                 } else if (minecraftClient.currentScreen == null || minecraftClient.currentScreen instanceof S9LabClientScreen) {
                     minecraftClient.setScreen(new EmoteWheelScreen(minecraftClient.currentScreen));
+                }
+            }
+            while (openFriendsKey.wasPressed()) {
+                MinecraftClient minecraftClient = MinecraftClient.getInstance();
+                if (minecraftClient.currentScreen instanceof FriendsOverlayScreen friendsScreen) {
+                    friendsScreen.close();
+                } else {
+                    minecraftClient.setScreen(new FriendsOverlayScreen(minecraftClient.currentScreen));
                 }
             }
             if (queuedScreen != null) {

@@ -26,8 +26,10 @@ public final class CosmeticResolver {
     }
 
     public static Optional<Cosmetic> equippedForState(PlayerEntityRenderState state, CosmeticType type) {
-        if (CosmeticPreviewContext.active()) {
-            return CosmeticPreviewContext.get(type);
+        // Preview states are authoritative and isolated: render only the selected
+        // preview cosmetic and never fall back to the real owned/equipped profile.
+        if (CosmeticPreviewContext.activeForState(state.id)) {
+            return CosmeticPreviewContext.getForState(state.id, type);
         }
 
         MinecraftClient client = MinecraftClient.getInstance();

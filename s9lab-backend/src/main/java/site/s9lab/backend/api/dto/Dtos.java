@@ -201,6 +201,66 @@ public final class Dtos {
         }
     }
 
+
+    public record FriendTargetRequest(String targetUuid, String targetName) {
+    }
+
+    public record FriendRespondRequest(String requesterUuid, boolean accept) {
+    }
+
+    public record FriendRemoveRequest(String friendUuid) {
+    }
+
+    public record FriendFavoriteRequest(String friendUuid, boolean favorite) {
+    }
+
+    public record FriendMessageRequest(String friendUuid, String message) {
+    }
+
+    public record FriendDto(
+            String uuid,
+            String name,
+            boolean online,
+            long lastSeen,
+            String status,
+            boolean favorite,
+            int unreadMessages
+    ) {
+    }
+
+    public record FriendRequestDto(
+            String uuid,
+            String name,
+            long createdAt
+    ) {
+    }
+
+    public record FriendsResponse(
+            boolean ok,
+            List<FriendDto> friends,
+            List<FriendRequestDto> incomingRequests,
+            List<FriendRequestDto> outgoingRequests
+    ) {
+    }
+
+    public record FriendMessageDto(
+            long messageId,
+            String senderUuid,
+            String receiverUuid,
+            String senderName,
+            String message,
+            long sentAt,
+            boolean read
+    ) {
+    }
+
+    public record FriendMessagesResponse(
+            boolean ok,
+            String friendUuid,
+            List<FriendMessageDto> messages
+    ) {
+    }
+
     public record StateUpdate(String event, String uuid, Map<String, String> equippedCosmetics, String emoteId, boolean online) {
     }
 }

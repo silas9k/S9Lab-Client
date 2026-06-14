@@ -21,6 +21,10 @@ public final class BackendState {
     private static final Map<UUID, NameEffects> NAME_EFFECTS = new ConcurrentHashMap<>();
     private static final Map<Long, Notification> NOTIFICATIONS = new ConcurrentHashMap<>();
     private static final Set<UUID> ONLINE_S9_PLAYERS = ConcurrentHashMap.newKeySet();
+    private static final Map<UUID, Friend> FRIENDS = new ConcurrentHashMap<>();
+    private static final Map<UUID, FriendRequest> INCOMING_FRIEND_REQUESTS = new ConcurrentHashMap<>();
+    private static final Map<UUID, FriendRequest> OUTGOING_FRIEND_REQUESTS = new ConcurrentHashMap<>();
+    private static final Map<UUID, List<DirectMessage>> FRIEND_MESSAGES = new ConcurrentHashMap<>();
     private static volatile long coins;
     private static volatile boolean plusActive;
     private static volatile long plusExpiresAt;
@@ -190,6 +194,159 @@ public final class BackendState {
         return uuid == null ? "" : REMOTE_EMOTES.getOrDefault(uuid, "");
     }
 
+    public static synchronized void applyFriendsSnapshot(
+            Collection<Friend> friends,
+            Collection<FriendRequest> incoming,
+            Collection<FriendRequest> outgoing
+    ) {
+        FRIENDS.clear();
+        if (friends != null) {
+            for (Friend friend : friends) {
+                if (friend == null || friend.uuid() == null || friend.uuid().isBlank()) {
+                    continue;
+                }
+                try {
+                    FRIENDS.put(UUID.fromString(friend.uuid()), friend);
+                } catch (RuntimeException ignored) {
+                }
+            }
+        }
+        INCOMING_FRIEND_REQUESTS.clear();
+        if (incoming != null) {
+            for (FriendRequest request : incoming) {
+                putFriendRequest(INCOMING_FRIEND_REQUESTS, request);
+            }
+        }
+        OUTGOING_FRIEND_REQUESTS.clear();
+        if (outgoing != null) {
+            for (FriendRequest request : outgoing) {
+                putFriendRequest(OUTGOING_FRIEND_REQUESTS, request);
+            }
+        }
+    }
+
+    public static List<Friend> friendsSnapshot() {
+        return FRIENDS.values().stream()
+                .sorted(Comparator
+                        .comparing(Friend::favorite).reversed()
+                        .thenComparing(Comparator.comparing(Friend::online).reversed())
+                        .thenComparing(Friend::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    public static List<FriendRequest> incomingFriendRequestsSnapshot() {
+        return INCOMING_FRIEND_REQUESTS.values().stream()
+                .sorted(Comparator.comparingLong(FriendRequest::createdAt).reversed())
+                .toList();
+    }
+
+    public static List<FriendRequest> outgoingFriendRequestsSnapshot() {
+        return OUTGOING_FRIEND_REQUESTS.values().stream()
+                .sorted(Comparator.comparingLong(FriendRequest::createdAt).reversed())
+                .toList();
+    }
+
+    public static Friend friend(UUID uuid) {
+        return uuid == null ? null : FRIENDS.get(uuid);
+    }
+
+    public static boolean applyFriendPresence(UUID uuid, String name, boolean online, long lastSeen, String friendStatus) {
+        if (uuid == null) {
+            return false;
+        }
+        Friend previous = FRIENDS.get(uuid);
+        if (previous == null) {
+            return false;
+        }
+        Friend updated = new Friend(
+                uuid.toString(),
+                name == null || name.isBlank() ? previous.name() : name,
+                online,
+                Math.max(lastSeen, previous.lastSeen()),
+                friendStatus == null || friendStatus.isBlank() ? (online ? "Online" : "Offline") : friendStatus,
+                previous.favorite(),
+                previous.unreadMessages()
+        );
+        FRIENDS.put(uuid, updated);
+        return previous.online() != online;
+    }
+
+    public static void applyConversation(String friendUuid, Collection<DirectMessage> messages) {
+        try {
+            UUID uuid = UUID.fromString(friendUuid);
+            List<DirectMessage> normalized = messages == null ? List.of() : messages.stream()
+                    .filter(message -> message != null && message.messageId() > 0)
+                    .sorted(Comparator.comparingLong(DirectMessage::sentAt).thenComparingLong(DirectMessage::messageId))
+                    .toList();
+            FRIEND_MESSAGES.put(uuid, List.copyOf(normalized));
+            Friend friend = FRIENDS.get(uuid);
+            if (friend != null && friend.unreadMessages() != 0) {
+                FRIENDS.put(uuid, friend.withUnreadMessages(0));
+            }
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    public static UUID applyFriendMessage(DirectMessage message) {
+        if (message == null || message.messageId() <= 0) {
+            return null;
+        }
+        UUID own = ownUuid();
+        if (own == null) {
+            return null;
+        }
+        try {
+            UUID sender = UUID.fromString(message.senderUuid());
+            UUID receiver = UUID.fromString(message.receiverUuid());
+            UUID friendUuid = own.equals(sender) ? receiver : sender;
+            List<DirectMessage> existing = FRIEND_MESSAGES.getOrDefault(friendUuid, List.of());
+            if (existing.stream().noneMatch(entry -> entry.messageId() == message.messageId())) {
+                List<DirectMessage> updated = new ArrayList<>(existing);
+                updated.add(message);
+                updated.sort(Comparator.comparingLong(DirectMessage::sentAt).thenComparingLong(DirectMessage::messageId));
+                if (updated.size() > 100) {
+                    updated = new ArrayList<>(updated.subList(updated.size() - 100, updated.size()));
+                }
+                FRIEND_MESSAGES.put(friendUuid, List.copyOf(updated));
+            }
+            if (own.equals(receiver)) {
+                Friend friend = FRIENDS.get(friendUuid);
+                if (friend != null) {
+                    FRIENDS.put(friendUuid, friend.withUnreadMessages(friend.unreadMessages() + 1));
+                }
+            }
+            return friendUuid;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    public static List<DirectMessage> conversationSnapshot(UUID friendUuid) {
+        return friendUuid == null ? List.of() : FRIEND_MESSAGES.getOrDefault(friendUuid, List.of());
+    }
+
+    public static int totalUnreadFriendMessages() {
+        return FRIENDS.values().stream().mapToInt(Friend::unreadMessages).sum();
+    }
+
+    private static void putFriendRequest(Map<UUID, FriendRequest> target, FriendRequest request) {
+        if (request == null || request.uuid() == null || request.uuid().isBlank()) {
+            return;
+        }
+        try {
+            target.put(UUID.fromString(request.uuid()), request);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static UUID ownUuid() {
+        try {
+            return net.minecraft.client.MinecraftClient.getInstance().getSession().getUuidOrNull();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     public static void applyProfileMetadata(String uuid, String rank, boolean plusActive) {
         applyProfileMetadata(uuid, rank, plusActive, 0L);
     }
@@ -251,6 +408,34 @@ public final class BackendState {
             }
         }
         return List.copyOf(normalized);
+    }
+
+    public record Friend(
+            String uuid,
+            String name,
+            boolean online,
+            long lastSeen,
+            String status,
+            boolean favorite,
+            int unreadMessages
+    ) {
+        public Friend withUnreadMessages(int unread) {
+            return new Friend(uuid, name, online, lastSeen, status, favorite, Math.max(0, unread));
+        }
+    }
+
+    public record FriendRequest(String uuid, String name, long createdAt) {
+    }
+
+    public record DirectMessage(
+            long messageId,
+            String senderUuid,
+            String receiverUuid,
+            String senderName,
+            String message,
+            long sentAt,
+            boolean read
+    ) {
     }
 
     public record NameEffects(boolean enabled, List<String> effects) {

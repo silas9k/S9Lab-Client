@@ -68,6 +68,8 @@ public final class BackendWebSocketServer extends WebSocketServer {
                         true
                 ))));
             }
+            sendFriendsSnapshot(canonicalUuid);
+            broadcastFriendPresence(canonicalUuid, true);
             broadcastState("PlayerStatusUpdate", canonicalUuid, database.equippedCosmetics(canonicalUuid), database.activeEmote(canonicalUuid).orElse(""), true);
         } catch (SQLException exception) {
             LOGGER.log(Level.WARNING, "websocket_open_state_failed", exception);
@@ -83,6 +85,7 @@ public final class BackendWebSocketServer extends WebSocketServer {
         }
         try {
             database.setOnline(uuid, false);
+            broadcastFriendPresence(uuid, false);
             broadcastState("PlayerStatusUpdate", uuid, null, null, false);
         } catch (SQLException exception) {
             LOGGER.log(Level.WARNING, "websocket_close_state_failed", exception);
@@ -174,6 +177,79 @@ public final class BackendWebSocketServer extends WebSocketServer {
             broadcast(Json.GSON.toJson(update));
         } catch (SQLException exception) {
             LOGGER.log(Level.WARNING, "player_metadata_broadcast_failed", exception);
+        }
+    }
+
+    public void sendFriendsSnapshot(String uuid) {
+        try {
+            Dtos.FriendsResponse response = database.friends(uuid);
+            Map<String, Object> update = new LinkedHashMap<>();
+            update.put("event", "FriendsSnapshot");
+            update.put("uuid", uuid);
+            update.put("ok", true);
+            update.put("friends", response.friends());
+            update.put("incomingRequests", response.incomingRequests());
+            update.put("outgoingRequests", response.outgoingRequests());
+            sendToUuid(uuid, Json.GSON.toJson(update));
+        } catch (SQLException exception) {
+            LOGGER.log(Level.WARNING, "friends_snapshot_failed", exception);
+        }
+    }
+
+    public void sendFriendRequestUpdate(String requesterUuid, String targetUuid, boolean accepted) {
+        sendFriendsSnapshot(requesterUuid);
+        sendFriendsSnapshot(targetUuid);
+        try {
+            Dtos.PlayerAdminResponse requester = database.profile(requesterUuid);
+            if (requester == null) {
+                return;
+            }
+            Map<String, Object> update = new LinkedHashMap<>();
+            update.put("event", accepted ? "FriendRequestAccepted" : "FriendRequestReceived");
+            update.put("uuid", requesterUuid);
+            update.put("name", requester.name());
+            update.put("accepted", accepted);
+            sendToUuid(targetUuid, Json.GSON.toJson(update));
+        } catch (SQLException exception) {
+            LOGGER.log(Level.WARNING, "friend_request_update_failed", exception);
+        }
+    }
+
+    public void sendFriendMessage(Dtos.FriendMessageDto message) {
+        if (message == null) {
+            return;
+        }
+        Map<String, Object> receiverUpdate = new LinkedHashMap<>();
+        receiverUpdate.put("event", "FriendMessage");
+        receiverUpdate.put("uuid", message.senderUuid());
+        receiverUpdate.put("message", message);
+        sendToUuid(message.receiverUuid(), Json.GSON.toJson(receiverUpdate));
+
+        Map<String, Object> senderUpdate = new LinkedHashMap<>();
+        senderUpdate.put("event", "FriendMessage");
+        senderUpdate.put("uuid", message.receiverUuid());
+        senderUpdate.put("message", message);
+        sendToUuid(message.senderUuid(), Json.GSON.toJson(senderUpdate));
+    }
+
+    public void broadcastFriendPresence(String uuid, boolean online) {
+        try {
+            for (String friendUuid : database.acceptedFriendUuids(uuid)) {
+                Dtos.FriendDto friend = database.friendForOwner(friendUuid, uuid);
+                if (friend == null) {
+                    continue;
+                }
+                Map<String, Object> update = new LinkedHashMap<>();
+                update.put("event", "FriendStatusUpdate");
+                update.put("uuid", uuid);
+                update.put("name", friend.name());
+                update.put("online", online);
+                update.put("lastSeen", friend.lastSeen());
+                update.put("status", online ? friend.status() : "Offline");
+                sendToUuid(friendUuid, Json.GSON.toJson(update));
+            }
+        } catch (SQLException exception) {
+            LOGGER.log(Level.WARNING, "friend_presence_broadcast_failed", exception);
         }
     }
 

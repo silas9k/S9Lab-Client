@@ -19,6 +19,7 @@ import java.util.logging.Logger;
 import site.s9lab.backend.api.dto.Dtos;
 import site.s9lab.backend.config.BackendConfig;
 import site.s9lab.backend.emotes.EmoteService;
+import site.s9lab.backend.friends.FriendsService;
 import site.s9lab.backend.profiles.ProfileService;
 import site.s9lab.backend.security.SessionManager;
 import site.s9lab.backend.shop.ShopService;
@@ -35,6 +36,7 @@ public final class ApiServer {
     private final ProfileService profiles;
     private final ShopService shop;
     private final EmoteService emotes;
+    private final FriendsService friends;
     private final SessionManager sessions;
     private final BackendWebSocketServer webSocketServer;
     private final RateLimiter rateLimiter;
@@ -53,6 +55,7 @@ public final class ApiServer {
         this.profiles = profiles;
         this.shop = shop;
         this.emotes = new EmoteService(database);
+        this.friends = new FriendsService(database);
         this.sessions = sessions;
         this.webSocketServer = webSocketServer;
         this.rateLimiter = new RateLimiter(config.rateLimitPerMinute());
@@ -137,6 +140,9 @@ public final class ApiServer {
                 return;
             }
             Dtos.ProfileResponse response = profiles.heartbeat(new Dtos.HeartbeatRequest(uuid, request.name(), request.playtimeSeconds(), request.status()));
+            if (webSocketServer != null) {
+                webSocketServer.broadcastFriendPresence(uuid, true);
+            }
             Json.send(exchange, 200, response);
             return;
         }
@@ -202,6 +208,108 @@ public final class ApiServer {
             }
             int markedRead = database.markNotificationsRead(uuid, request == null ? List.of() : request.notificationIds());
             Json.send(exchange, 200, new Dtos.NotificationReadResponse(true, markedRead));
+            return;
+        }
+
+        if (method.equals("GET") && route.equals("/friends")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Json.send(exchange, 200, friends.snapshot(uuid));
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/friends/add")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Dtos.FriendTargetRequest request = requireBody(Json.read(exchange, Dtos.FriendTargetRequest.class));
+            FriendsService.AddResult result = friends.add(uuid, request.targetUuid(), request.targetName());
+            if (webSocketServer != null) {
+                webSocketServer.sendFriendRequestUpdate(uuid, result.targetUuid(), result.accepted());
+            }
+            Json.send(exchange, 200, result.response());
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/friends/respond")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Dtos.FriendRespondRequest request = requireBody(Json.read(exchange, Dtos.FriendRespondRequest.class));
+            String requesterUuid = requireUuid(request.requesterUuid());
+            Dtos.FriendsResponse response = friends.respond(uuid, requesterUuid, request.accept());
+            if (webSocketServer != null) {
+                if (request.accept()) {
+                    webSocketServer.sendFriendRequestUpdate(uuid, requesterUuid, true);
+                } else {
+                    webSocketServer.sendFriendsSnapshot(uuid);
+                    webSocketServer.sendFriendsSnapshot(requesterUuid);
+                }
+            }
+            Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/friends/remove")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Dtos.FriendRemoveRequest request = requireBody(Json.read(exchange, Dtos.FriendRemoveRequest.class));
+            String friendUuid = requireUuid(request.friendUuid());
+            Dtos.FriendsResponse response = friends.remove(uuid, friendUuid);
+            if (webSocketServer != null) {
+                webSocketServer.sendFriendsSnapshot(uuid);
+                webSocketServer.sendFriendsSnapshot(friendUuid);
+            }
+            Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/friends/favorite")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Dtos.FriendFavoriteRequest request = requireBody(Json.read(exchange, Dtos.FriendFavoriteRequest.class));
+            Dtos.FriendsResponse response = friends.favorite(uuid, requireUuid(request.friendUuid()), request.favorite());
+            if (webSocketServer != null) {
+                webSocketServer.sendFriendsSnapshot(uuid);
+            }
+            Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("GET") && route.startsWith("/friends/messages/")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            String friendUuid = requireUuid(route.substring("/friends/messages/".length()));
+            Dtos.FriendMessagesResponse response = friends.messages(uuid, friendUuid);
+            if (webSocketServer != null) {
+                webSocketServer.sendFriendsSnapshot(uuid);
+            }
+            Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/friends/message")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Dtos.FriendMessageRequest request = requireBody(Json.read(exchange, Dtos.FriendMessageRequest.class));
+            Dtos.FriendMessageDto message = friends.sendMessage(uuid, requireUuid(request.friendUuid()), request.message());
+            if (webSocketServer != null) {
+                webSocketServer.sendFriendMessage(message);
+                webSocketServer.sendFriendsSnapshot(message.receiverUuid());
+            }
+            Json.send(exchange, 200, message);
             return;
         }
 

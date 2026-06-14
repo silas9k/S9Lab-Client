@@ -6,35 +6,30 @@ import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.renderer.base.GeoRenderState;
 
 public class HaloGeoModel extends GeoModel<HaloGeoAnimatable> {
+    private final Identifier texture;
+
+    public HaloGeoModel() {
+        this(Identifier.of(S9LabClient.MOD_ID, "textures/cosmetics/halos/s9lab_gold_halo.png"));
+    }
+
+    public HaloGeoModel(Identifier texture) {
+        this.texture = texture == null
+                ? Identifier.of(S9LabClient.MOD_ID, "textures/cosmetics/halos/s9lab_gold_halo.png")
+                : texture;
+    }
+
     @Override
     public Identifier getModelResource(GeoRenderState renderState) {
-        /*
-         * GeckoLib sucht daraus:
-         * assets/s9labclient/geo/s9lab_gold_halo.geo.json
-         */
-        return Identifier.of(
-                S9LabClient.MOD_ID,
-                "s9lab_gold_halo"
-        );
+        return Identifier.of(S9LabClient.MOD_ID, "s9lab_gold_halo");
     }
 
     @Override
     public Identifier getTextureResource(GeoRenderState renderState) {
-        return Identifier.of(
-                S9LabClient.MOD_ID,
-                "textures/cosmetics/halos/s9lab_gold_halo.png"
-        );
+        return texture;
     }
 
     @Override
     public Identifier getAnimationResource(HaloGeoAnimatable animatable) {
-        /*
-         * Aktuell egal, weil HaloGeoAnimatable keine Controller registriert.
-         * Später aktivieren wir die Animation wieder.
-         */
-        return Identifier.of(
-                S9LabClient.MOD_ID,
-                "s9lab_gold_halo.animation"
-        );
+        return Identifier.of(S9LabClient.MOD_ID, "s9lab_gold_halo.animation");
     }
 }

@@ -34,8 +34,9 @@ public class BodyGlintRenderer extends FeatureRenderer<PlayerEntityRenderState, 
     @Override
     public void render(MatrixStack matrices, OrderedRenderCommandQueue queue, int light, PlayerEntityRenderState state, float limbAngle, float limbDistance) {
         GlintModule glintModule = getGlintModule();
+        boolean preview = CosmeticPreviewContext.activeForState(state.id);
 
-        if (glintModule == null || state.invisible || (!CosmeticPreviewContext.active() && !glintModule.isEnabled())) {
+        if (state.invisible || (!preview && (glintModule == null || !glintModule.isEnabled()))) {
             return;
         }
 

@@ -26,7 +26,7 @@ public class ShoulderBuddyRenderer extends FeatureRenderer<PlayerEntityRenderSta
 
     @Override
     public void render(MatrixStack matrices, OrderedRenderCommandQueue queue, int light, PlayerEntityRenderState state, float limbAngle, float limbDistance) {
-        if (state.invisible || !isEnabled()) {
+        if (state.invisible || !isEnabled(state.id)) {
             return;
         }
 
@@ -49,9 +49,13 @@ public class ShoulderBuddyRenderer extends FeatureRenderer<PlayerEntityRenderSta
         matrices.pop();
     }
 
-    private static boolean isEnabled() {
+    private static boolean isEnabled(int stateId) {
+        if (CosmeticPreviewContext.activeForState(stateId)) {
+            return true;
+        }
+
         Module module = S9LabClientClient.getModuleManager().getModule("Shoulder Buddy").orElse(null);
-        return CosmeticPreviewContext.active() || module != null && module.isEnabled();
+        return module != null && module.isEnabled();
     }
 
     private static double number(Module module, String name, double fallback) {
