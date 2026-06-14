@@ -2,6 +2,7 @@ package site.s9lab.s9labclient.client.backend;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -16,9 +17,13 @@ public final class BackendState {
     private static final Map<CosmeticType, String> EQUIPPED = new ConcurrentHashMap<>();
     private static final Map<UUID, Map<CosmeticType, String>> REMOTE_EQUIPPED = new ConcurrentHashMap<>();
     private static final Map<UUID, String> REMOTE_EMOTES = new ConcurrentHashMap<>();
+    private static final Map<UUID, String> RANKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, NameEffects> NAME_EFFECTS = new ConcurrentHashMap<>();
     private static final Map<Long, Notification> NOTIFICATIONS = new ConcurrentHashMap<>();
     private static final Set<UUID> ONLINE_S9_PLAYERS = ConcurrentHashMap.newKeySet();
     private static volatile long coins;
+    private static volatile boolean plusActive;
+    private static volatile long plusExpiresAt;
     private static volatile boolean online;
     private static volatile String status = "Backend offline";
 
@@ -40,6 +45,14 @@ public final class BackendState {
 
     public static long coins() {
         return coins;
+    }
+
+    public static boolean plusActive() {
+        return plusActive && plusExpiresAt > System.currentTimeMillis() / 1000L;
+    }
+
+    public static long plusExpiresAt() {
+        return plusExpiresAt;
     }
 
     public static void applyProfile(long coins, Collection<String> owned, Map<String, String> equipped, Collection<ShopCosmetic> catalog) {
@@ -177,9 +190,90 @@ public final class BackendState {
         return uuid == null ? "" : REMOTE_EMOTES.getOrDefault(uuid, "");
     }
 
-    public record ShopCosmetic(String id, String type, String name, String description, long price, boolean enabled) {
+    public static void applyProfileMetadata(String uuid, String rank, boolean plusActive) {
+        applyProfileMetadata(uuid, rank, plusActive, 0L);
+    }
+
+    public static void applyProfileMetadata(String uuid, String rank, boolean active, long expiresAt) {
+        applyProfileMetadata(uuid, rank, active, expiresAt, false, List.of());
+    }
+
+    public static void applyProfileMetadata(String uuid, String rank, boolean active, long expiresAt, boolean effectsEnabled, Collection<String> effects) {
+        if (uuid == null || uuid.isBlank()) {
+            return;
+        }
+        try {
+            UUID parsed = UUID.fromString(uuid);
+            ONLINE_S9_PLAYERS.add(parsed);
+            boolean activePlus = active || "PLUS".equalsIgnoreCase(rank);
+            RANKS.put(parsed, activePlus ? "PLUS" : "USER");
+            NAME_EFFECTS.put(parsed, new NameEffects(activePlus && effectsEnabled, normalizeEffects(effects)));
+            if (isOwnUuid(parsed)) {
+                plusActive = activePlus;
+                plusExpiresAt = Math.max(0L, expiresAt);
+            }
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    public static boolean plusIcon(UUID uuid) {
+        return uuid != null && "PLUS".equalsIgnoreCase(RANKS.getOrDefault(uuid, "USER"));
+    }
+
+    public static NameEffects nameEffects(UUID uuid) {
+        return uuid == null ? NameEffects.DISABLED : NAME_EFFECTS.getOrDefault(uuid, NameEffects.DISABLED);
+    }
+
+    private static boolean isOwnUuid(UUID uuid) {
+        try {
+            return net.minecraft.client.MinecraftClient.getInstance().getSession().getUuidOrNull().equals(uuid);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static List<String> normalizeEffects(Collection<String> effects) {
+        if (effects == null || effects.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String effect : effects) {
+            String value = effect == null ? "" : effect.trim().toLowerCase();
+            if (value.isBlank() || "none".equals(value)) {
+                continue;
+            }
+            if (List.of("rainbow", "wave", "shake", "spin", "bounce", "pulse", "blink", "fade", "iterate", "glitch", "color_white", "color_red", "color_orange", "color_yellow", "color_green", "color_cyan", "color_blue", "color_purple", "color_pink").contains(value)
+                    && !normalized.contains(value)) {
+                normalized.add(value);
+            }
+            if (normalized.size() >= 3) {
+                break;
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    public record NameEffects(boolean enabled, List<String> effects) {
+        public static final NameEffects DISABLED = new NameEffects(false, List.of());
+    }
+
+    public record ShopCosmetic(
+            String id,
+            String type,
+            String name,
+            String description,
+            long price,
+            boolean enabled,
+            String rarity,
+            boolean limited,
+            long availableFrom,
+            long availableUntil,
+            boolean plusExclusive,
+            String limitedText,
+            String previewAsset
+    ) {
         public static ShopCosmetic fallback(String cosmeticId) {
-            return new ShopCosmetic(cosmeticId, "", cosmeticId, "Waiting for backend catalog.", 0, true);
+            return new ShopCosmetic(cosmeticId, "", cosmeticId, "Waiting for backend catalog.", 0, true, "COMMON", false, 0L, 0L, false, "", "");
         }
     }
 

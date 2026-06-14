@@ -26,6 +26,7 @@ import site.s9lab.s9labclient.client.discord.DiscordRPCManager;
 import site.s9lab.s9labclient.client.emote.EmoteManager;
 import site.s9lab.s9labclient.client.hud.HudRenderer;
 import site.s9lab.s9labclient.client.module.ModuleManager;
+import site.s9lab.s9labclient.client.resource.S9BuiltinResourcePacks;
 import site.s9lab.s9labclient.client.screenshot.ScreenshotManager;
 import site.s9lab.s9labclient.client.ui.EmoteWheelScreen;
 import site.s9lab.s9labclient.client.ui.S9LabClientScreen;
@@ -44,6 +45,7 @@ public class S9LabClientClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        S9BuiltinResourcePacks.register();
         moduleManager = new ModuleManager();
         cosmeticRegistry = new CosmeticRegistry();
         configManager = new ConfigManager(moduleManager, cosmeticRegistry);

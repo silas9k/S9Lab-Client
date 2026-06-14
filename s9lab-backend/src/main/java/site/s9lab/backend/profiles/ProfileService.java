@@ -52,6 +52,12 @@ public final class ProfileService {
                 profile.lastSeen(),
                 profile.totalPlaytimeSeconds(),
                 true,
+                profile.rank(),
+                profile.badges(),
+                profile.plusActive(),
+                profile.plusExpiresAt(),
+                profile.nameEffectsEnabled(),
+                profile.nameEffects(),
                 database.cosmetics(),
                 settingsMap(profile.uuid()),
                 database.unreadNotifications(profile.uuid()),
@@ -75,6 +81,12 @@ public final class ProfileService {
                 profile.lastSeen(),
                 profile.totalPlaytimeSeconds(),
                 profile.online(),
+                profile.rank(),
+                profile.badges(),
+                profile.plusActive(),
+                profile.plusExpiresAt(),
+                profile.nameEffectsEnabled(),
+                profile.nameEffects(),
                 database.cosmetics(),
                 settingsMap(profile.uuid()),
                 database.unreadNotifications(profile.uuid()),
@@ -95,6 +107,7 @@ public final class ProfileService {
             throw new IllegalArgumentException("settings_too_large");
         }
         database.saveUserSettingsJson(normalized, json);
+        saveNameEffectsFromSettings(normalized, safeSettings);
         return new Dtos.SettingsResponse(true, normalized, settingsMap(normalized));
     }
 
@@ -124,8 +137,30 @@ public final class ProfileService {
                 profile.lastSeen(),
                 profile.totalPlaytimeSeconds(),
                 profile.online(),
-                true
+                true,
+                profile.rank(),
+                profile.badges(),
+                profile.plusActive(),
+                profile.plusExpiresAt(),
+                profile.nameEffectsEnabled(),
+                profile.nameEffects()
         );
+    }
+
+    private void saveNameEffectsFromSettings(String uuid, Map<String, Object> settings) throws SQLException {
+        Map<?, ?> modules = settings.get("modules") instanceof Map<?, ?> map ? map : null;
+        Map<?, ?> badge = modules != null && modules.get("Tablist Badge") instanceof Map<?, ?> map ? map : null;
+        Map<?, ?> badgeSettings = badge != null && badge.get("settings") instanceof Map<?, ?> map ? map : null;
+        if (badgeSettings == null) {
+            return;
+        }
+        boolean enabled = valueAsBoolean(badgeSettings.get("Plus Name Effects Enabled"), false);
+        List<String> effects = List.of(
+                valueAsString(badgeSettings.get("Plus Effect 1")),
+                valueAsString(badgeSettings.get("Plus Effect 2")),
+                valueAsString(badgeSettings.get("Plus Effect 3"))
+        );
+        database.saveNameEffects(uuid, enabled, effects);
     }
 
     private Map<String, Object> settingsMap(String uuid) throws SQLException {
@@ -202,6 +237,14 @@ public final class ProfileService {
 
     private static boolean blockedKey(String key) {
         return key.isBlank() || BLOCKED_SETTINGS_KEYS.contains(key.toLowerCase().replaceAll("[^a-z0-9]", ""));
+    }
+
+    private static boolean valueAsBoolean(Object value, boolean fallback) {
+        return value instanceof Boolean booleanValue ? booleanValue : fallback;
+    }
+
+    private static String valueAsString(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private static String sanitizeKey(String key) {

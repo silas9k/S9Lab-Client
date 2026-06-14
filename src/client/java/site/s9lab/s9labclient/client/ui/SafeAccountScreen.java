@@ -6,7 +6,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.session.Session;
 import net.minecraft.text.Text;
 import site.s9lab.s9labclient.client.account.AccountLoginHelper;
 import site.s9lab.s9labclient.client.ui.premium.PremiumRender;

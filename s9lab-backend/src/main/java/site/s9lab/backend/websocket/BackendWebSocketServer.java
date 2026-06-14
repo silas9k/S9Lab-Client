@@ -136,6 +136,12 @@ public final class BackendWebSocketServer extends WebSocketServer {
             update.put("lastSeen", profile.lastSeen());
             update.put("totalPlaytimeSeconds", profile.totalPlaytimeSeconds());
             update.put("online", profile.online());
+            update.put("rank", profile.rank());
+            update.put("badges", profile.badges());
+            update.put("plusActive", profile.plusActive());
+            update.put("plusExpiresAt", profile.plusExpiresAt());
+            update.put("nameEffectsEnabled", profile.nameEffectsEnabled());
+            update.put("nameEffects", profile.nameEffects());
             update.put("catalog", database.cosmetics());
             String body = Json.GSON.toJson(update);
             clients.forEach((socket, clientUuid) -> {
@@ -145,6 +151,29 @@ public final class BackendWebSocketServer extends WebSocketServer {
             });
         } catch (SQLException exception) {
             LOGGER.log(Level.WARNING, "profile_update_send_failed", exception);
+        }
+    }
+
+    public void broadcastPlayerMetadata(String uuid) {
+        try {
+            Dtos.PlayerAdminResponse profile = database.profile(uuid);
+            if (profile == null) {
+                return;
+            }
+            Map<String, Object> update = new LinkedHashMap<>();
+            update.put("event", "PlayerMetadataUpdate");
+            update.put("ok", true);
+            update.put("uuid", profile.uuid());
+            update.put("name", profile.name());
+            update.put("rank", profile.rank());
+            update.put("badges", profile.badges());
+            update.put("plusActive", profile.plusActive());
+            update.put("plusExpiresAt", profile.plusExpiresAt());
+            update.put("nameEffectsEnabled", profile.nameEffectsEnabled());
+            update.put("nameEffects", profile.nameEffects());
+            broadcast(Json.GSON.toJson(update));
+        } catch (SQLException exception) {
+            LOGGER.log(Level.WARNING, "player_metadata_broadcast_failed", exception);
         }
     }
 

@@ -55,7 +55,9 @@ public final class DatabaseManager implements AutoCloseable {
                     first_seen INTEGER NOT NULL,
                     last_seen INTEGER NOT NULL,
                     total_playtime_seconds INTEGER NOT NULL DEFAULT 0,
-                    online INTEGER NOT NULL DEFAULT 0
+                    online INTEGER NOT NULL DEFAULT 0,
+                    rank TEXT NOT NULL DEFAULT 'USER',
+                    plus_expires_at INTEGER NOT NULL DEFAULT 0
                 )
                 """);
         execute("""
@@ -65,7 +67,14 @@ public final class DatabaseManager implements AutoCloseable {
                     name TEXT NOT NULL,
                     description TEXT NOT NULL,
                     price INTEGER NOT NULL,
-                    enabled INTEGER NOT NULL DEFAULT 1
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    rarity TEXT NOT NULL DEFAULT 'COMMON',
+                    limited INTEGER NOT NULL DEFAULT 0,
+                    available_from INTEGER NOT NULL DEFAULT 0,
+                    available_until INTEGER NOT NULL DEFAULT 0,
+                    plus_exclusive INTEGER NOT NULL DEFAULT 0,
+                    limited_text TEXT NOT NULL DEFAULT '',
+                    preview_asset TEXT NOT NULL DEFAULT ''
                 )
                 """);
         execute("""
@@ -150,18 +159,36 @@ public final class DatabaseManager implements AutoCloseable {
         execute("CREATE INDEX IF NOT EXISTS idx_cosmetic_gifts_receiver ON cosmetic_gifts(receiver_uuid)");
         execute("CREATE INDEX IF NOT EXISTS idx_notifications_receiver_read ON notifications(receiver_uuid, read, created_at)");
         execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)");
+        migrateColumn("players", "rank", "TEXT NOT NULL DEFAULT 'USER'");
+        migrateColumn("players", "plus_expires_at", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("players", "name_effects_enabled", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("players", "name_effects", "TEXT NOT NULL DEFAULT ''");
+        migrateColumn("cosmetics", "rarity", "TEXT NOT NULL DEFAULT 'COMMON'");
+        migrateColumn("cosmetics", "limited", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("cosmetics", "available_from", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("cosmetics", "available_until", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("cosmetics", "plus_exclusive", "INTEGER NOT NULL DEFAULT 0");
+        migrateColumn("cosmetics", "limited_text", "TEXT NOT NULL DEFAULT ''");
+        migrateColumn("cosmetics", "preview_asset", "TEXT NOT NULL DEFAULT ''");
     }
 
     public synchronized void seedCosmetics(List<CosmeticDefinition> definitions) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO cosmetics (id, type, name, description, price, enabled)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO cosmetics (id, type, name, description, price, enabled, rarity, limited, available_from, available_until, plus_exclusive, limited_text, preview_asset)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     type = excluded.type,
                     name = excluded.name,
                     description = excluded.description,
                     price = excluded.price,
-                    enabled = excluded.enabled
+                    enabled = excluded.enabled,
+                    rarity = excluded.rarity,
+                    limited = excluded.limited,
+                    available_from = excluded.available_from,
+                    available_until = excluded.available_until,
+                    plus_exclusive = excluded.plus_exclusive,
+                    limited_text = excluded.limited_text,
+                    preview_asset = excluded.preview_asset
                 """)) {
             for (CosmeticDefinition definition : definitions) {
                 statement.setString(1, definition.id());
@@ -170,6 +197,13 @@ public final class DatabaseManager implements AutoCloseable {
                 statement.setString(4, definition.description());
                 statement.setLong(5, definition.price());
                 statement.setInt(6, definition.enabled() ? 1 : 0);
+                statement.setString(7, definition.rarity());
+                statement.setInt(8, definition.limited() ? 1 : 0);
+                statement.setLong(9, definition.availableFrom());
+                statement.setLong(10, definition.availableUntil());
+                statement.setInt(11, definition.plusExclusive() ? 1 : 0);
+                statement.setString(12, definition.limitedText());
+                statement.setString(13, definition.previewAsset());
                 statement.addBatch();
             }
             statement.executeBatch();
@@ -213,6 +247,10 @@ public final class DatabaseManager implements AutoCloseable {
                 if (!result.next()) {
                     return null;
                 }
+                long plusExpiresAt = result.getLong("plus_expires_at");
+                boolean plusActive = plusExpiresAt > now();
+                String rank = plusActive ? "PLUS" : "USER";
+                boolean effectsEnabled = plusActive && result.getInt("name_effects_enabled") == 1;
                 return new Dtos.PlayerAdminResponse(
                         true,
                         uuid,
@@ -224,7 +262,13 @@ public final class DatabaseManager implements AutoCloseable {
                         result.getLong("first_seen"),
                         result.getLong("last_seen"),
                         result.getLong("total_playtime_seconds"),
-                        result.getInt("online") == 1
+                        result.getInt("online") == 1,
+                        rank,
+                        List.of(),
+                        plusActive,
+                        plusExpiresAt,
+                        effectsEnabled,
+                        parseNameEffects(result.getString("name_effects"))
                 );
             }
         }
@@ -254,7 +298,15 @@ public final class DatabaseManager implements AutoCloseable {
                         result.getString("name"),
                         result.getString("description"),
                         result.getLong("price"),
-                        result.getInt("enabled") == 1
+                        result.getInt("enabled") == 1,
+                        blank(result.getString("rarity"), "COMMON"),
+                        result.getInt("limited") == 1,
+                        result.getLong("available_from"),
+                        result.getLong("available_until"),
+                        result.getInt("plus_exclusive") == 1,
+                        blank(result.getString("limited_text"), ""),
+                        blank(result.getString("preview_asset"), ""),
+                        Map.of()
                 ));
             }
         }
@@ -274,7 +326,15 @@ public final class DatabaseManager implements AutoCloseable {
                         result.getString("name"),
                         result.getString("description"),
                         result.getLong("price"),
-                        result.getInt("enabled") == 1
+                        result.getInt("enabled") == 1,
+                        blank(result.getString("rarity"), "COMMON"),
+                        result.getInt("limited") == 1,
+                        result.getLong("available_from"),
+                        result.getLong("available_until"),
+                        result.getInt("plus_exclusive") == 1,
+                        blank(result.getString("limited_text"), ""),
+                        blank(result.getString("preview_asset"), ""),
+                        Map.of()
                 ));
             }
         }
@@ -428,6 +488,9 @@ public final class DatabaseManager implements AutoCloseable {
         if (cosmetic.get().price() < 0 || cosmetic.get().price() > MAX_COINS) {
             throw new IllegalArgumentException("invalid_cosmetic_price");
         }
+        if (cosmetic.get().plusExclusive() && !plusActive(uuid)) {
+            throw new IllegalArgumentException("plus_required");
+        }
 
         connection.setAutoCommit(false);
         try {
@@ -456,6 +519,120 @@ public final class DatabaseManager implements AutoCloseable {
         }
     }
 
+    public synchronized void buyPlus(String uuid, int months, long price) throws SQLException {
+        if (months != 1 && months != 3) {
+            throw new IllegalArgumentException("invalid_plus_plan");
+        }
+        if (price < 0 || price > MAX_COINS) {
+            throw new IllegalArgumentException("invalid_plus_price");
+        }
+        ensurePlayerForAdmin(uuid);
+        if (plusActive(uuid)) {
+            throw new IllegalArgumentException("plus_already_active");
+        }
+
+        connection.setAutoCommit(false);
+        try {
+            long currentCoins = coins(uuid);
+            if (currentCoins < price) {
+                throw new IllegalArgumentException("not_enough_coins");
+            }
+            long currentExpiry = 0L;
+            try (PreparedStatement select = connection.prepareStatement("SELECT plus_expires_at FROM players WHERE uuid = ?")) {
+                select.setString(1, uuid);
+                try (ResultSet result = select.executeQuery()) {
+                    if (result.next()) {
+                        currentExpiry = result.getLong("plus_expires_at");
+                    }
+                }
+            }
+            long now = now();
+            long base = Math.max(now, currentExpiry);
+            long extensionSeconds = months * 30L * 24L * 60L * 60L;
+            long newExpiry = base > Long.MAX_VALUE - extensionSeconds ? Long.MAX_VALUE : base + extensionSeconds;
+            try (PreparedStatement update = connection.prepareStatement("""
+                    UPDATE players
+                    SET coins = coins - ?, rank = 'PLUS', plus_expires_at = ?
+                    WHERE uuid = ?
+                    """)) {
+                update.setLong(1, price);
+                update.setLong(2, newExpiry);
+                update.setString(3, uuid);
+                update.executeUpdate();
+            }
+            connection.commit();
+            audit("shop", uuid, "plus_buy", "months=" + months + " price=" + price + " expires=" + newExpiry);
+        } catch (SQLException | RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(true);
+        }
+    }
+
+    public synchronized void giftPlus(String senderUuid, String receiverUuid, int months, long price) throws SQLException {
+        if (senderUuid.equals(receiverUuid)) {
+            throw new IllegalArgumentException("cannot_gift_self");
+        }
+        if (months != 1 && months != 3) {
+            throw new IllegalArgumentException("invalid_plus_plan");
+        }
+        if (price < 0 || price > MAX_COINS) {
+            throw new IllegalArgumentException("invalid_plus_price");
+        }
+        ensurePlayerForAdmin(senderUuid);
+        ensurePlayerForAdmin(receiverUuid);
+        if (plusActive(receiverUuid)) {
+            throw new IllegalArgumentException("receiver_plus_active");
+        }
+        connection.setAutoCommit(false);
+        try {
+            long currentCoins = coins(senderUuid);
+            if (currentCoins < price) {
+                throw new IllegalArgumentException("not_enough_coins");
+            }
+            long createdAt = now();
+            long newExpiry = createdAt + months * 30L * 24L * 60L * 60L;
+            try (PreparedStatement updateSender = connection.prepareStatement("UPDATE players SET coins = coins - ? WHERE uuid = ?")) {
+                updateSender.setLong(1, price);
+                updateSender.setString(2, senderUuid);
+                updateSender.executeUpdate();
+            }
+            try (PreparedStatement updateReceiver = connection.prepareStatement("""
+                    UPDATE players
+                    SET rank = 'PLUS', plus_expires_at = ?, name_effects_enabled = 0
+                    WHERE uuid = ?
+                    """)) {
+                updateReceiver.setLong(1, newExpiry);
+                updateReceiver.setString(2, receiverUuid);
+                updateReceiver.executeUpdate();
+            }
+            connection.commit();
+            audit("shop", receiverUuid, "plus_gift", "sender=" + senderUuid + " months=" + months + " price=" + price + " expires=" + newExpiry);
+        } catch (SQLException | RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(true);
+        }
+    }
+
+    public synchronized void saveNameEffects(String uuid, boolean enabled, List<String> effects) throws SQLException {
+        ensurePlayerForAdmin(uuid);
+        List<String> normalized = normalizeNameEffects(effects);
+        boolean active = plusActive(uuid) && enabled && !normalized.isEmpty();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE players
+                SET name_effects_enabled = ?, name_effects = ?
+                WHERE uuid = ?
+                """)) {
+            statement.setInt(1, active ? 1 : 0);
+            statement.setString(2, String.join(",", normalized));
+            statement.setString(3, uuid);
+            statement.executeUpdate();
+        }
+    }
+
     public synchronized void equip(String uuid, String cosmeticId) throws SQLException {
         Optional<Dtos.CosmeticDto> cosmetic = cosmetic(cosmeticId);
         if (cosmetic.isEmpty() || !cosmetic.get().enabled()) {
@@ -463,6 +640,9 @@ public final class DatabaseManager implements AutoCloseable {
         }
         if (!owns(uuid, cosmeticId)) {
             throw new IllegalArgumentException("not_owned");
+        }
+        if (cosmetic.get().plusExclusive() && !plusActive(uuid)) {
+            throw new IllegalArgumentException("plus_required");
         }
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO equipped_cosmetics (uuid, type, cosmetic_id)
@@ -668,6 +848,25 @@ public final class DatabaseManager implements AutoCloseable {
         }
     }
 
+    private void migrateColumn(String table, String column, String definition) throws SQLException {
+        if (columnExists(table, column)) {
+            return;
+        }
+        execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+    }
+
+    private boolean columnExists(String table, String column) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (result.next()) {
+                if (column.equalsIgnoreCase(result.getString("name"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private void ensurePlayerForAdmin(String uuid) throws SQLException {
         long now = now();
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -680,6 +879,43 @@ public final class DatabaseManager implements AutoCloseable {
             statement.setLong(3, now);
             statement.executeUpdate();
         }
+    }
+
+    private boolean plusActive(String uuid) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT plus_expires_at FROM players WHERE uuid = ?")) {
+            statement.setString(1, uuid);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && result.getLong("plus_expires_at") > now();
+            }
+        }
+    }
+
+    private static List<String> parseNameEffects(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return normalizeNameEffects(List.of(csv.split(",")));
+    }
+
+    private static List<String> normalizeNameEffects(List<String> effects) {
+        if (effects == null || effects.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String effect : effects) {
+            String value = effect == null ? "" : effect.trim().toLowerCase();
+            if (value.equals("none") || value.isBlank()) {
+                continue;
+            }
+            if (List.of("shake", "wave", "rainbow", "bounce", "blink", "pulse", "spin", "sequential_spin", "fade", "iterate", "glitch", "scale", "offset", "gradient", "dynamic_gradient_red_blue", "dynamic_gradient_green_yellow", "lava").contains(value)
+                    && !normalized.contains(value)) {
+                normalized.add(value);
+            }
+            if (normalized.size() >= 3) {
+                break;
+            }
+        }
+        return normalized;
     }
 
     private static long addClamped(long current, long amount) {

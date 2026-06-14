@@ -25,11 +25,13 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.session.Session;
 import site.s9lab.s9labclient.S9LabClient;
 import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.cosmetics.Cosmetic;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticType;
+import site.s9lab.s9labclient.client.foundation.model.UserProfile;
+import site.s9lab.s9labclient.client.foundation.profile.ProfileCache;
+import site.s9lab.s9labclient.client.foundation.session.S9UserSession;
 import site.s9lab.s9labclient.client.notification.S9ToastManager;
 
 public final class BackendClient {
@@ -39,6 +41,7 @@ public final class BackendClient {
     private static final Type SETTINGS_MAP = new TypeToken<Map<String, Object>>() { }.getType();
     private static final Type CATALOG_LIST = new TypeToken<List<BackendState.ShopCosmetic>>() { }.getType();
     private static final Type NOTIFICATION_LIST = new TypeToken<List<BackendState.Notification>>() { }.getType();
+    private static final ProfileCache PROFILE_CACHE = new ProfileCache();
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
     private static ScheduledExecutorService executor;
     private static HttpClient httpClient;
@@ -72,6 +75,8 @@ public final class BackendClient {
         RUNNING.set(false);
         closeSocket("client_shutdown");
         sessionToken = "";
+        S9UserSession.clearBackendToken();
+        PROFILE_CACHE.clear();
         lastHandshake = Instant.EPOCH;
         WEB_SOCKET_CONNECTING.set(false);
         if (executor != null) {
@@ -89,6 +94,33 @@ public final class BackendClient {
     public static void buyCosmetic(String cosmeticId) {
         postAction("/shop/buy", cosmeticPayload(cosmeticId, ""), ignored ->
                 S9ToastManager.success("Successful purchase", cosmeticName(cosmeticId)));
+    }
+
+    public static void buyPlus(String planId) {
+        SessionIdentity identity = identity();
+        JsonObject payload = new JsonObject();
+        payload.addProperty("uuid", identity == null ? "" : identity.uuid());
+        payload.addProperty("plan", planId);
+        postAction("/plus/buy", payload, ignored ->
+                S9ToastManager.success("S9Lab Client+", "Plus is now active"));
+    }
+
+    public static void giftPlus(String receiver, String planId) {
+        SessionIdentity identity = identity();
+        JsonObject payload = new JsonObject();
+        payload.addProperty("senderUuid", identity == null ? "" : identity.uuid());
+        payload.addProperty("plan", planId);
+        try {
+            UUID uuid = UUID.fromString(receiver == null ? "" : receiver.trim());
+            payload.addProperty("receiverUuid", uuid.toString());
+            payload.addProperty("receiverName", "");
+        } catch (RuntimeException exception) {
+            payload.addProperty("receiverUuid", "");
+            payload.addProperty("receiverName", receiver == null ? "" : receiver.trim());
+        }
+        String receiverLabel = receiver == null ? "" : receiver.trim();
+        postAction("/plus/gift", payload, ignored ->
+                S9ToastManager.gift("S9Lab Client+ gifted", receiverLabel.isBlank() ? "Gift sent" : "To: " + receiverLabel));
     }
 
     public static void equipCosmetic(CosmeticType type, String cosmeticId) {
@@ -185,6 +217,9 @@ public final class BackendClient {
     public static void requestProfile(String target, Consumer<ProfileInfo> success, Consumer<String> failure) {
         if (executor == null) {
             return;
+        }
+        if (target != null) {
+            PROFILE_CACHE.getByName(target).ifPresent(profile -> callbackSuccess(success, ProfileInfo.fromProfile(profile)));
         }
         executor.execute(() -> {
             try {
@@ -326,6 +361,7 @@ public final class BackendClient {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() == 401) {
             sessionToken = "";
+            S9UserSession.clearBackendToken();
             lastHandshake = Instant.EPOCH;
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -345,6 +381,7 @@ public final class BackendClient {
         HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() == 401) {
             sessionToken = "";
+            S9UserSession.clearBackendToken();
             lastHandshake = Instant.EPOCH;
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -360,6 +397,7 @@ public final class BackendClient {
         }
         if (!json.has("coins") && !json.has("ownedCosmetics") && !json.has("equippedCosmetics") && !json.has("catalog")) {
             BackendState.setOnline(true, "Backend connected");
+            cacheProfile(json);
             return;
         }
 
@@ -375,10 +413,20 @@ public final class BackendClient {
                 : List.of();
         if (json.has("sessionToken") && !json.get("sessionToken").getAsString().isBlank()) {
             sessionToken = json.get("sessionToken").getAsString();
+            S9UserSession.setBackendToken(sessionToken);
             lastHandshake = Instant.now();
         }
 
         BackendState.applyProfile(coins, owned, equipped, catalog);
+        BackendState.applyProfileMetadata(
+                string(json, "uuid"),
+                string(json, "rank"),
+                json.has("plusActive") && json.get("plusActive").getAsBoolean(),
+                longValue(json, "plusExpiresAt"),
+                json.has("nameEffectsEnabled") && json.get("nameEffectsEnabled").getAsBoolean(),
+                json.has("nameEffects") ? GSON.fromJson(json.get("nameEffects"), STRING_LIST) : List.of()
+        );
+        cacheProfile(json);
         applyNotifications(json, true);
         applySettings(body);
     }
@@ -469,19 +517,9 @@ public final class BackendClient {
     }
 
     private static SessionIdentity identity() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getSession() == null) {
-            return null;
-        }
-        Session session = client.getSession();
-        UUID uuid = session.getUuidOrNull();
-        if (uuid == null && client.player != null) {
-            uuid = client.player.getUuid();
-        }
-        if (uuid == null) {
-            return null;
-        }
-        return new SessionIdentity(uuid.toString(), session.getUsername());
+        return S9UserSession.current()
+                .map(identity -> new SessionIdentity(identity.uuidString(), identity.name()))
+                .orElse(null);
     }
 
     private static String serverStatus() {
@@ -553,6 +591,17 @@ public final class BackendClient {
                     applyProfile(message);
                     return;
                 }
+                if ("PlayerMetadataUpdate".equals(event)) {
+                    BackendState.applyProfileMetadata(
+                            string(json, "uuid"),
+                            string(json, "rank"),
+                            json.has("plusActive") && json.get("plusActive").getAsBoolean(),
+                            longValue(json, "plusExpiresAt"),
+                            json.has("nameEffectsEnabled") && json.get("nameEffectsEnabled").getAsBoolean(),
+                            json.has("nameEffects") ? GSON.fromJson(json.get("nameEffects"), STRING_LIST) : List.of()
+                    );
+                    return;
+                }
                 if ("CosmeticStateUpdate".equals(event) || "PlayerStatusUpdate".equals(event)) {
                     Map<String, String> equipped = json.has("equippedCosmetics")
                             ? GSON.fromJson(json.get("equippedCosmetics"), STRING_MAP)
@@ -606,7 +655,7 @@ public final class BackendClient {
         if (json == null || !json.has("ok") || !json.get("ok").getAsBoolean()) {
             throw new IllegalArgumentException("profile_not_found");
         }
-        return new ProfileInfo(
+        ProfileInfo profile = new ProfileInfo(
                 string(json, "uuid"),
                 string(json, "name"),
                 longValue(json, "coins"),
@@ -616,8 +665,14 @@ public final class BackendClient {
                 longValue(json, "lastSeen"),
                 longValue(json, "totalPlaytimeSeconds"),
                 !json.has("online") || json.get("online").getAsBoolean(),
-                !json.has("s9labUser") || json.get("s9labUser").getAsBoolean()
+                !json.has("s9labUser") || json.get("s9labUser").getAsBoolean(),
+                string(json, "rank").isBlank() ? "USER" : string(json, "rank"),
+                json.has("badges") ? GSON.fromJson(json.get("badges"), STRING_LIST) : List.of(),
+                json.has("plusActive") && json.get("plusActive").getAsBoolean(),
+                longValue(json, "plusExpiresAt")
         );
+        cacheProfile(profile);
+        return profile;
     }
 
     private static void callbackSuccess(Consumer<ProfileInfo> success, ProfileInfo profile) {
@@ -671,7 +726,82 @@ public final class BackendClient {
             long lastSeen,
             long totalPlaytimeSeconds,
             boolean online,
-            boolean s9labUser
+            boolean s9labUser,
+            String rank,
+            List<String> badges,
+            boolean plusActive,
+            long plusExpiresAt
     ) {
+        private static ProfileInfo fromProfile(UserProfile profile) {
+            return new ProfileInfo(
+                    profile.minecraftUuid().toString(),
+                    profile.minecraftName(),
+                    profile.coins(),
+                    profile.equippedCosmetics().size(),
+                    "",
+                    profile.createdAt(),
+                    profile.lastOnlineAt(),
+                    profile.playtimeSeconds(),
+                    profile.presence() != site.s9lab.s9labclient.client.foundation.model.PresenceStatus.OFFLINE,
+                    true,
+                    profile.rank().name(),
+                    profile.badges(),
+                    profile.plusStatus().active(),
+                    profile.plusStatus().expiresAt()
+            );
+        }
+    }
+
+    public static ProfileCache profileCache() {
+        return PROFILE_CACHE;
+    }
+
+    private static void cacheProfile(JsonObject json) {
+        if (json == null || !json.has("uuid") || !json.has("name")) {
+            return;
+        }
+        try {
+            Map<String, String> equipped = json.has("equippedCosmetics")
+                    ? GSON.fromJson(json.get("equippedCosmetics"), STRING_MAP)
+                    : Map.of();
+            UserProfile profile = UserProfile.basic(
+                    UUID.fromString(string(json, "uuid")),
+                    string(json, "name"),
+                    longValue(json, "coins"),
+                    longValue(json, "totalPlaytimeSeconds"),
+                    longValue(json, "firstSeen"),
+                    longValue(json, "lastSeen"),
+                    !json.has("online") || json.get("online").getAsBoolean(),
+                    string(json, "rank"),
+                    json.has("badges") ? GSON.fromJson(json.get("badges"), STRING_LIST) : List.of(),
+                    longValue(json, "plusExpiresAt"),
+                    equipped
+            );
+            PROFILE_CACHE.put(profile);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static void cacheProfile(ProfileInfo profile) {
+        if (profile == null || profile.uuid().isBlank()) {
+            return;
+        }
+        try {
+            BackendState.applyProfileMetadata(profile.uuid(), profile.rank(), profile.plusActive(), profile.plusExpiresAt(), false, List.of());
+            PROFILE_CACHE.put(UserProfile.basic(
+                    UUID.fromString(profile.uuid()),
+                    profile.name(),
+                    profile.coins(),
+                    profile.totalPlaytimeSeconds(),
+                    profile.firstSeen(),
+                    profile.lastSeen(),
+                    profile.online(),
+                    profile.rank(),
+                    profile.badges(),
+                    profile.plusExpiresAt(),
+                    Map.of()
+            ));
+        } catch (RuntimeException ignored) {
+        }
     }
 }

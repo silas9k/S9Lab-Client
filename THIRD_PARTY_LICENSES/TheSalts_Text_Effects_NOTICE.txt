@@ -1,0 +1,8 @@
+TheSalt's Text Effects
+Source: https://modrinth.com/resourcepack/thesalts-text-effects
+Integrated version: 1.0.10 (Minecraft 1.21.6-1.21.11)
+License: MIT
+
+The shader files are copied unchanged into the custom built-in
+"S9Lab Client Resourcepack". Only pack metadata and S9Lab Java integration
+are customized.

@@ -146,6 +146,15 @@ public final class ApiServer {
             return;
         }
 
+        if (method.equals("GET") && route.equals("/plus/plans")) {
+            String uuid = requireSessionUuid(exchange);
+            if (uuid == null) {
+                return;
+            }
+            Json.send(exchange, 200, Map.of("ok", true, "plans", shop.plusPlans(), "profile", database.profile(uuid)));
+            return;
+        }
+
         if (method.equals("GET") && route.equals("/settings")) {
             String uuid = requireSessionUuid(exchange);
             if (uuid == null) {
@@ -164,7 +173,11 @@ public final class ApiServer {
             if (request.uuid() != null && !request.uuid().isBlank() && !requireUuid(request.uuid()).equals(uuid)) {
                 throw new IllegalArgumentException("uuid_mismatch");
             }
-            Json.send(exchange, 200, profiles.saveSettings(uuid, request.settings()));
+            Dtos.SettingsResponse response = profiles.saveSettings(uuid, request.settings());
+            if (webSocketServer != null) {
+                webSocketServer.broadcastPlayerMetadata(uuid);
+            }
+            Json.send(exchange, 200, response);
             return;
         }
 
@@ -225,6 +238,45 @@ public final class ApiServer {
             }
             LOGGER.info(() -> "cosmetic_buy uuid=" + request.uuid() + " cosmetic=" + request.cosmeticId());
             Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/plus/buy")) {
+            Dtos.PlusPurchaseRequest request = requireBody(Json.read(exchange, Dtos.PlusPurchaseRequest.class));
+            String uuid = requireUuid(request.uuid());
+            if (!requireClientSession(exchange, uuid)) {
+                return;
+            }
+            Dtos.PlayerAdminResponse response = shop.buyPlus(uuid, requireText(request.plan(), "missing_plus_plan"));
+            if (webSocketServer != null) {
+                webSocketServer.sendProfileUpdate(uuid);
+                webSocketServer.broadcastPlayerMetadata(uuid);
+            }
+            LOGGER.info(() -> "plus_buy uuid=" + uuid + " plan=" + request.plan());
+            Json.send(exchange, 200, response);
+            return;
+        }
+
+        if (method.equals("POST") && route.equals("/plus/gift")) {
+            Dtos.PlusGiftRequest request = requireBody(Json.read(exchange, Dtos.PlusGiftRequest.class));
+            String senderUuid = requireUuid(request.senderUuid());
+            if (!requireClientSession(exchange, senderUuid)) {
+                return;
+            }
+            String receiverUuid = request.receiverUuid() == null || request.receiverUuid().isBlank() ? "" : requireUuid(request.receiverUuid());
+            Dtos.PlusGiftResult result = shop.giftPlus(
+                    senderUuid,
+                    receiverUuid,
+                    request.receiverName(),
+                    requireText(request.plan(), "missing_plus_plan")
+            );
+            if (webSocketServer != null) {
+                webSocketServer.sendProfileUpdate(senderUuid);
+                webSocketServer.sendProfileUpdate(result.receiverUuid());
+                webSocketServer.broadcastPlayerMetadata(result.receiverUuid());
+            }
+            LOGGER.info(() -> "plus_gift sender=" + senderUuid + " receiver=" + (receiverUuid.isBlank() ? request.receiverName() : receiverUuid) + " plan=" + request.plan());
+            Json.send(exchange, 200, result.senderProfile());
             return;
         }
 

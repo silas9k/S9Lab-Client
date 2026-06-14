@@ -30,6 +30,8 @@ import site.s9lab.s9labclient.client.module.setting.KeybindSetting;
 import site.s9lab.s9labclient.client.module.setting.ModeSetting;
 import site.s9lab.s9labclient.client.module.setting.NumberSetting;
 import site.s9lab.s9labclient.client.module.setting.Setting;
+import site.s9lab.s9labclient.client.module.impl.utility.TablistBadgeModule;
+import site.s9lab.s9labclient.client.util.S9TextEffects;
 import site.s9lab.s9labclient.client.ui.premium.PremiumRender;
 import site.s9lab.s9labclient.client.ui.premium.theme.ClientTheme;
 import site.s9lab.s9labclient.client.ui.premium.theme.ThemeManager;
@@ -52,6 +54,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private static final int DIM = 0xFF687083;
     private static final int GREEN = 0xFF49F26F;
     private static final int WARN = 0xFFFFB454;
+    private static final String PLUS_PLAN_1M = "plus_1m";
+    private static final String PLUS_PLAN_3M = "plus_3m";
+    private static final long PLUS_PRICE_1M = 750L;
+    private static final long PLUS_PRICE_3M = 1900L;
 
     private final Screen parent;
     private ClientTab selectedTab;
@@ -65,6 +71,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private int scroll;
     private int cosmeticSideScroll;
     private boolean showAllCosmetics;
+    private boolean plusShopOpen;
     private boolean showAllModules;
     private boolean moduleDetailsOpen;
     private boolean cosmeticDetailsOpen;
@@ -76,6 +83,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private String search = "";
     private boolean sortAscending = true;
     private boolean giftDialogOpen;
+    private String plusGiftPlan = "";
     private String giftReceiver = "";
     private String giftStatus = "";
 
@@ -241,6 +249,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (giftDialogOpen) {
             if (input.isEscape()) {
                 giftDialogOpen = false;
+                plusGiftPlan = "";
                 return true;
             }
             if (input.getKeycode() == GLFW.GLFW_KEY_BACKSPACE && !giftReceiver.isEmpty()) {
@@ -293,6 +302,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
     public void close() {
         if (giftDialogOpen) {
             giftDialogOpen = false;
+            plusGiftPlan = "";
             return;
         }
         S9LabClientClient.getConfigManager().save();
@@ -552,6 +562,10 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (module == null) {
             return;
         }
+        if (module instanceof TablistBadgeModule badgeModule) {
+            renderNameEffectSettings(context, parts, badgeModule, mouseX, mouseY, accent);
+            return;
+        }
         int x = parts.sideX + 10;
         int y = parts.contentY + 12;
         int width = parts.width - 20;
@@ -593,6 +607,124 @@ public class S9LabClientScreen extends ResponsiveScreen {
             renderModuleDetailRow(context, x + 34, rowY, width - 68, setting.getName(), settingValue(setting), setting instanceof BooleanSetting, mouseX, mouseY, accent);
             rowY += 36;
         }
+    }
+
+    private void renderNameEffectSettings(
+            DrawContext context,
+            CosmeticLayout parts,
+            TablistBadgeModule module,
+            int mouseX,
+            int mouseY,
+            int accent
+    ) {
+        int x = parts.sideX + 10;
+        int y = parts.contentY + 12;
+        int width = parts.width - 20;
+        int bottom = parts.y + parts.height - parts.footerH - 12;
+        int height = Math.max(1, bottom - y);
+        context.fill(x, y, x + width, y + height, 0xF011141B);
+        outline(context, x, y, width, height, 0, 0x554A5160);
+
+        context.drawTextWithShadow(textRenderer, Text.literal("< S9C+ NAMETAG STYLE"), x + 14, y + 13, WHITE);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("Choose up to 3 effects. They are decoded by one compact built-in shader marker."),
+                x + 14, y + 30, MUTED);
+
+        List<String> selected = module.plusNameEffects();
+        int slotY = y + 50;
+        int slotGap = 8;
+        int slotW = Math.max(90, (width - 28 - slotGap * 2) / 3);
+        for (int slot = 0; slot < 3; slot++) {
+            int sx = x + 14 + slot * (slotW + slotGap);
+            String value = slot < selected.size() ? S9TextEffects.displayName(selected.get(slot)) : "EMPTY SLOT";
+            boolean active = slot < selected.size();
+            context.fill(sx, slotY, sx + slotW, slotY + 28, active ? 0x55305DB8 : 0x4411161F);
+            outline(context, sx, slotY, slotW, 28, 0, active ? accent : 0x664A5160);
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal(TextLayout.ellipsize(textRenderer, (slot + 1) + ". " + value, slotW - 12)),
+                    sx + slotW / 2, slotY + 10, active ? WHITE : MUTED);
+        }
+
+        String preview = MinecraftClient.getInstance().getSession() == null
+                ? "silas0055"
+                : MinecraftClient.getInstance().getSession().getUsername();
+        int previewColor = selected.isEmpty() ? WHITE : (S9TextEffects.triggerColor(selected) | 0xFF000000);
+        context.drawTextWithShadow(textRenderer, Text.literal(preview), x + 14, y + 88, previewColor);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(selected.size() + " / 3 EFFECTS SELECTED"),
+                x + 14, y + 104, DIM);
+        renderSquareButton(context, x + width - 92, y + 84, 76, 26, "CLEAR", false, mouseX, mouseY, accent);
+
+        int sectionY = y + 132;
+        context.drawTextWithShadow(textRenderer, Text.literal("— AVAILABLE SHADER EFFECTS —"), x + 14, sectionY, DIM);
+        context.fill(x + 206, sectionY + 5, x + width - 14, sectionY + 6, 0x334A5160);
+        int effectsBottom = renderNameEffectGrid(context, module, S9TextEffects.EFFECT_IDS,
+                x + 14, sectionY + 18, width - 28, mouseX, mouseY, accent);
+
+        int toggleY = Math.min(effectsBottom + 12, bottom - 68);
+        renderNameEffectToggle(context, x + 14, toggleY, width - 28,
+                "RENDER EFFECTS ON MY NAME", module.plusNameEffectsEnabled(), mouseX, mouseY, accent);
+        renderNameEffectToggle(context, x + 14, toggleY + 32, width - 28,
+                "SHOW OTHER PLAYERS' EFFECTS", module.showOtherPlayersNameEffects(), mouseX, mouseY, accent);
+    }
+
+    private int renderNameEffectGrid(
+            DrawContext context,
+            TablistBadgeModule module,
+            List<String> ids,
+            int x,
+            int y,
+            int width,
+            int mouseX,
+            int mouseY,
+            int accent
+    ) {
+        int columns = width >= 760 ? 5 : width >= 560 ? 4 : 3;
+        int gap = 7;
+        int buttonW = Math.max(78, (width - gap * (columns - 1)) / columns);
+        int buttonH = 27;
+        for (int index = 0; index < ids.size(); index++) {
+            String id = ids.get(index);
+            int col = index % columns;
+            int row = index / columns;
+            int bx = x + col * (buttonW + gap);
+            int by = y + row * (buttonH + gap);
+            boolean selectedEffect = module.isEffectSelected(id);
+            boolean hovered = inside(mouseX, mouseY, bx, by, buttonW, buttonH);
+            int fill = selectedEffect ? 0x66305DB8 : hovered ? 0x332D6DFF : 0x6611161F;
+            context.fill(bx, by, bx + buttonW, by + buttonH, fill);
+            outline(context, bx, by, buttonW, buttonH, 0,
+                    selectedEffect ? accent : hovered ? 0xAA6B8EFF : 0x664A5160);
+            int labelColor = selectedEffect ? S9TextEffects.previewColor(id) : hovered ? WHITE : MUTED;
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal(TextLayout.ellipsize(textRenderer, S9TextEffects.displayName(id), buttonW - 18)),
+                    bx + buttonW / 2, by + 9, labelColor);
+            if (selectedEffect) {
+                context.drawTextWithShadow(textRenderer, Text.literal("✓"), bx + buttonW - 12, by + 3, WHITE);
+            }
+        }
+        int rows = (ids.size() + columns - 1) / columns;
+        return y + rows * (buttonH + gap) - gap;
+    }
+
+    private void renderNameEffectToggle(
+            DrawContext context,
+            int x,
+            int y,
+            int width,
+            String label,
+            boolean enabled,
+            int mouseX,
+            int mouseY,
+            int accent
+    ) {
+        boolean hovered = inside(mouseX, mouseY, x, y, width, 26);
+        context.fill(x, y, x + width, y + 26, hovered ? 0x331E2938 : 0x2211161F);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), x + 8, y + 8, enabled ? WHITE : MUTED);
+        int bx = x + width - 22;
+        context.fill(bx, y + 4, bx + 16, y + 20, enabled ? 0x663A6FFF : 0x55252C38);
+        outline(context, bx, y + 4, 16, 16, 0, enabled ? accent : 0x668A93A6);
+        if (enabled) context.drawCenteredTextWithShadow(textRenderer, Text.literal("✓"), bx + 8, y + 7, WHITE);
     }
 
     private int renderModuleDetailSection(DrawContext context, String label, int x, int y, int width) {
@@ -942,6 +1074,11 @@ public class S9LabClientScreen extends ResponsiveScreen {
             context.fill(parts.preview.x - 1, parts.contentY, parts.preview.x, parts.y + parts.height - parts.footerH, 0x66FFFFFF);
         }
 
+        if (plusShopOpen) {
+            renderPlusShop(context, parts, mouseX, mouseY, accent);
+            return;
+        }
+
         if (cosmeticDetailsOpen && selectedCosmetic != null) {
             renderCosmeticDetails(context, parts, mouseX, mouseY, accent);
             return;
@@ -1038,6 +1175,72 @@ public class S9LabClientScreen extends ResponsiveScreen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(cosmeticActionLabel(cosmetic)), previewX + previewW / 2, buttonY + 9, WHITE);
     }
 
+    private void renderPlusShop(DrawContext context, CosmeticLayout parts, int mouseX, int mouseY, int accent) {
+        context.drawTextWithShadow(textRenderer, Text.literal("S9LAB CLIENT+"), parts.gridX, parts.contentY + 12, WHITE);
+        context.fill(parts.gridX + 2, parts.contentY + 36, parts.gridX + parts.gridW - 4, parts.contentY + 37, 0x44FFFFFF);
+
+        boolean stacked = parts.gridW < 250;
+        int cardGap = Math.max(8, parts.gridW / 42);
+        int cardW = stacked ? Math.max(96, parts.gridW - 4) : Math.max(112, (parts.gridW - cardGap) / 2);
+        int cardH = stacked ? Math.max(92, (parts.gridH - cardGap - 10) / 2) : Math.min(170, Math.max(122, parts.gridH - 16));
+        int cardY = parts.gridY + 4;
+        renderPlusPlanCard(context, parts.gridX, cardY, cardW, cardH, "1 MONTH", PLUS_PRICE_1M, PLUS_PLAN_1M, mouseX, mouseY, accent);
+        renderPlusPlanCard(context, stacked ? parts.gridX : parts.gridX + cardW + cardGap, stacked ? cardY + cardH + cardGap : cardY, cardW, cardH, "3 MONTHS", PLUS_PRICE_3M, PLUS_PLAN_3M, mouseX, mouseY, accent);
+
+        if (parts.preview.width <= 0) {
+            return;
+        }
+        int px = parts.preview.x;
+        int py = parts.preview.y;
+        int pw = parts.preview.width;
+        int ph = parts.preview.height;
+        context.fill(px, py, px + pw, py + ph, 0x1EFFFFFF);
+        outline(context, px, py, pw, ph, 0, 0x44FFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("S9LAB CLIENT+"), px + pw / 2, py + 14, WHITE);
+        if (BackendState.plusActive()) {
+            boolean settingsHovered = inside(mouseX, mouseY, px + pw - 34, py + 8, 24, 22);
+            rect(context, px + pw - 34, py + 8, 24, 22, 6, settingsHovered ? ClientTheme.withAlpha(accent, 180) : 0x66151A25);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("..."), px + pw - 22, py + 14, WHITE);
+        }
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(BackendState.plusActive() ? "ACTIVE" : "NOT ACTIVE"), px + pw / 2, py + 30, BackendState.plusActive() ? GREEN : MUTED);
+        int icon = Math.min(72, Math.max(42, pw / 2));
+        context.drawTexture(RenderPipelines.GUI_TEXTURED, Identifier.of("s9labclient", "textures/font/s9_icon_plus.png"),
+                px + (pw - icon) / 2, py + 58, 0.0F, 0.0F, icon, icon, icon, icon);
+        String expires = BackendState.plusActive() ? "UNTIL " + plusExpiryLabel(BackendState.plusExpiresAt()) : "BUY A PLAN";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, expires, pw - 16)), px + pw / 2, py + 142, BackendState.plusActive() ? GREEN : WARN);
+        int textY = py + 166;
+        context.drawTextWithShadow(textRenderer, Text.literal("- Plus icon in tablist"), px + 14, textY, TEXT);
+        context.drawTextWithShadow(textRenderer, Text.literal("- Plus icon in F5 name"), px + 14, textY + 16, TEXT);
+        context.drawTextWithShadow(textRenderer, Text.literal("- Optional rainbow name"), px + 14, textY + 32, TEXT);
+    }
+
+    private void renderPlusPlanCard(DrawContext context, int x, int y, int width, int height, String label, long price, String planId, int mouseX, int mouseY, int accent) {
+        boolean hovered = inside(mouseX, mouseY, x, y, width, height);
+        context.fill(x, y, x + width, y + height, hovered ? 0x40364A66 : 0x263B66D9);
+        outline(context, x, y, width, height, 0, hovered ? accent : 0x66FFFFFF);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), x + 8, y + 8, WHITE);
+        context.drawTextWithShadow(textRenderer, Text.literal("S9Lab Client+"), x + 8, y + 24, MUTED);
+        int icon = Math.min(54, Math.max(34, width / 4));
+        context.drawTexture(RenderPipelines.GUI_TEXTURED, Identifier.of("s9labclient", "textures/font/s9_icon_plus.png"),
+                x + (width - icon) / 2, y + 44, 0.0F, 0.0F, icon, icon, icon, icon);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(price + " COINS"), x + width / 2, y + height - 48, WARN);
+        boolean alreadyActive = BackendState.plusActive();
+        boolean canBuy = BackendState.online() && !alreadyActive && BackendState.coins() >= price;
+        boolean canGift = BackendState.online() && BackendState.coins() >= price;
+        int gap = 6;
+        int buttonW = Math.max(34, (width - 24 - gap) / 2);
+        int buttonY = y + height - 32;
+        int buyColor = canBuy ? ClientTheme.withAlpha(accent, 210) : 0x55151A25;
+        rect(context, x + 12, buttonY, buttonW, 24, 0, buyColor);
+        outline(context, x + 12, buttonY, buttonW, 24, 0, canBuy ? accent : LINE_SOFT);
+        String buyLabel = alreadyActive ? "ACTIVE" : canBuy ? "BUY" : BackendState.online() ? "NO COINS" : "OFFLINE";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(buyLabel), x + 12 + buttonW / 2, buttonY + 8, canBuy ? WHITE : MUTED);
+        int giftX = x + 12 + buttonW + gap;
+        rect(context, giftX, buttonY, buttonW, 24, 0, canGift ? 0xFF1B2534 : 0x55151A25);
+        outline(context, giftX, buttonY, buttonW, 24, 0, canGift ? ClientTheme.withAlpha(accent, 190) : LINE_SOFT);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("GIFT"), giftX + buttonW / 2, buttonY + 8, canGift ? WHITE : MUTED);
+    }
+
 
     private void renderCatalog(DrawContext context, Layout layout, int mouseX, int mouseY, int accent) {
         renderCosmetics(context, layout, mouseX, mouseY, accent);
@@ -1047,9 +1250,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int buttonY = parts.y + 11;
         int buttonH = Math.max(18, Math.min(24, parts.topbarH - 18));
         int x = parts.x + 8;
-        renderSquareButton(context, x, buttonY, 72, buttonH, cosmeticMenuLabel(selectedCosmeticType).toUpperCase(Locale.ROOT), !showAllCosmetics, mouseX, mouseY, accent);
+        renderSquareButton(context, x, buttonY, 72, buttonH, cosmeticMenuLabel(selectedCosmeticType).toUpperCase(Locale.ROOT), !showAllCosmetics && !plusShopOpen, mouseX, mouseY, accent);
         x += 78;
-        renderSquareButton(context, x, buttonY, 58, buttonH, "ALL", showAllCosmetics, mouseX, mouseY, accent);
+        renderSquareButton(context, x, buttonY, 58, buttonH, "ALL", showAllCosmetics && !plusShopOpen, mouseX, mouseY, accent);
         x += 66;
         int searchW = Math.max(90, Math.min(190, parts.gridX + parts.gridW - x - 10));
         renderShopSearch(context, x, buttonY, searchW, buttonH, mouseX, mouseY, accent);
@@ -1065,7 +1268,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int itemY = parts.contentY + 6 - cosmeticSideScroll;
         context.enableScissor(parts.sideX, parts.contentY, parts.sideX + parts.sideW, parts.y + parts.height - parts.footerH);
         for (CosmeticType type : CosmeticType.values()) {
-            boolean active = type == selectedCosmeticType;
+            boolean active = type == selectedCosmeticType && !plusShopOpen;
             int rowH = Math.max(18, Math.min(27, parts.height / 15));
             String label = cosmeticMenuLabel(type).toUpperCase(Locale.ROOT);
             int color = active && !showAllCosmetics ? accent : WHITE;
@@ -1079,6 +1282,16 @@ public class S9LabClientScreen extends ResponsiveScreen {
             context.drawTextWithShadow(textRenderer, Text.literal(label), parts.sideX + 12, itemY + (rowH - 8) / 2, color);
             itemY += rowH + 5;
         }
+        int rowH = Math.max(18, Math.min(27, parts.height / 15));
+        boolean plusActive = plusShopOpen;
+        if (plusActive) {
+            context.fill(parts.sideX + 2, itemY + 2, parts.sideX + 5, itemY + rowH - 3, accent);
+            context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x222F65C8);
+        }
+        if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+            context.fill(parts.sideX + 7, itemY, parts.sideX + parts.sideW - 6, itemY + rowH, 0x22FFFFFF);
+        }
+        context.drawTextWithShadow(textRenderer, Text.literal("S9LAB+"), parts.sideX + 12, itemY + (rowH - 8) / 2, plusActive ? accent : WHITE);
         context.disableScissor();
     }
 
@@ -1231,8 +1444,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int x = layout.x + (layout.width - w) / 2;
         int y = layout.y + (layout.height - h) / 2;
         PremiumRender.shopPanel(context, x, y, w, h, 42, 0);
-        context.drawTextWithShadow(textRenderer, Text.literal("Gift Cosmetic"), x + 18, y + 16, WHITE);
-        String name = selectedCosmetic == null ? "" : selectedCosmetic.displayName();
+        boolean giftingPlus = plusGiftPlan != null && !plusGiftPlan.isBlank();
+        context.drawTextWithShadow(textRenderer, Text.literal(giftingPlus ? "Gift S9Lab Client+" : "Gift Cosmetic"), x + 18, y + 16, WHITE);
+        String name = giftingPlus ? (PLUS_PLAN_3M.equals(plusGiftPlan) ? "3 Months" : "1 Month") : selectedCosmetic == null ? "" : selectedCosmetic.displayName();
         context.drawTextWithShadow(textRenderer, Text.literal(TextLayout.ellipsize(textRenderer, name, w - 36)), x + 18, y + 31, MUTED);
 
         int inputY = y + 58;
@@ -1445,6 +1659,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (module == null) {
             return false;
         }
+        if (module instanceof TablistBadgeModule badgeModule) {
+            return handleNameEffectSettingsClick(parts, badgeModule, mouseX, mouseY);
+        }
         int x = parts.sideX + 10;
         int y = parts.contentY + 12;
         int width = parts.width - 20;
@@ -1497,6 +1714,73 @@ public class S9LabClientScreen extends ResponsiveScreen {
             rowY += 36;
         }
         return false;
+    }
+
+    private boolean handleNameEffectSettingsClick(
+            CosmeticLayout parts,
+            TablistBadgeModule module,
+            int mouseX,
+            int mouseY
+    ) {
+        int x = parts.sideX + 10;
+        int y = parts.contentY + 12;
+        int width = parts.width - 20;
+        int bottom = parts.y + parts.height - parts.footerH - 12;
+
+        if (inside(mouseX, mouseY, x + 6, y + 4, 210, 34)) {
+            moduleDetailsOpen = false;
+            return true;
+        }
+        if (inside(mouseX, mouseY, x + width - 92, y + 84, 76, 26)) {
+            module.clearEffects();
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+
+        int gridX = x + 14;
+        int gridWidth = width - 28;
+        int effectsY = y + 150;
+        String clicked = clickedNameEffect(S9TextEffects.EFFECT_IDS, gridX, effectsY, gridWidth, mouseX, mouseY);
+        if (clicked != null) {
+            module.toggleEffect(clicked);
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+
+        int effectsBottom = nameEffectGridBottom(S9TextEffects.EFFECT_IDS, effectsY, gridWidth);
+        int toggleY = Math.min(effectsBottom + 12, bottom - 68);
+        if (inside(mouseX, mouseY, gridX, toggleY, gridWidth, 26)) {
+            module.setPlusNameEffectsEnabled(!module.plusNameEffectsEnabled());
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        if (inside(mouseX, mouseY, gridX, toggleY + 32, gridWidth, 26)) {
+            module.setShowOtherPlayersNameEffects(!module.showOtherPlayersNameEffects());
+            S9LabClientClient.getConfigManager().save();
+            return true;
+        }
+        return true;
+    }
+
+    private String clickedNameEffect(List<String> ids, int x, int y, int width, int mouseX, int mouseY) {
+        int columns = width >= 760 ? 5 : width >= 560 ? 4 : 3;
+        int gap = 7;
+        int buttonW = Math.max(78, (width - gap * (columns - 1)) / columns);
+        int buttonH = 27;
+        for (int index = 0; index < ids.size(); index++) {
+            int col = index % columns;
+            int row = index / columns;
+            int bx = x + col * (buttonW + gap);
+            int by = y + row * (buttonH + gap);
+            if (inside(mouseX, mouseY, bx, by, buttonW, buttonH)) return ids.get(index);
+        }
+        return null;
+    }
+
+    private int nameEffectGridBottom(List<String> ids, int y, int width) {
+        int columns = width >= 760 ? 5 : width >= 560 ? 4 : 3;
+        int rows = (ids.size() + columns - 1) / columns;
+        return y + rows * 34 - 7;
     }
 
     private boolean handleNotificationBannerClick(Layout layout, int mouseX, int mouseY) {
@@ -1687,12 +1971,14 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int typeX = parts.x + 8;
         int allX = typeX + 78;
         if (inside(mouseX, mouseY, typeX, buttonY, 72, buttonH)) {
+            plusShopOpen = false;
             showAllCosmetics = false;
             cosmeticDetailsOpen = false;
             scroll = 0;
             return true;
         }
         if (inside(mouseX, mouseY, allX, buttonY, 58, buttonH)) {
+            plusShopOpen = false;
             showAllCosmetics = true;
             cosmeticDetailsOpen = false;
             scroll = 0;
@@ -1711,6 +1997,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
             int rowH = Math.max(18, Math.min(27, parts.height / 15));
             for (CosmeticType type : CosmeticType.values()) {
                 if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                    plusShopOpen = false;
                     selectedCosmeticType = type;
                     showAllCosmetics = false;
                     cosmeticDetailsOpen = false;
@@ -1722,6 +2009,16 @@ public class S9LabClientScreen extends ResponsiveScreen {
                 }
                 itemY += rowH + 5;
             }
+            if (inside(mouseX, mouseY, parts.sideX + 7, itemY, parts.sideW - 13, rowH)) {
+                plusShopOpen = true;
+                showAllCosmetics = false;
+                cosmeticDetailsOpen = false;
+                scroll = 0;
+                return true;
+            }
+        }
+        if (plusShopOpen) {
+            return handlePlusShopClick(parts, mouseX, mouseY);
         }
         if (cosmeticDetailsOpen && selectedCosmetic != null) {
             return handleCosmeticDetailsClick(layout, mouseX, mouseY);
@@ -1821,6 +2118,48 @@ public class S9LabClientScreen extends ResponsiveScreen {
         return false;
     }
 
+    private boolean handlePlusShopClick(CosmeticLayout parts, int mouseX, int mouseY) {
+        if (BackendState.plusActive() && parts.preview.width > 0
+                && inside(mouseX, mouseY, parts.preview.x + parts.preview.width - 34, parts.preview.y + 8, 24, 22)) {
+            S9LabClientClient.getModuleManager().getModule("Tablist Badge").ifPresent(module -> {
+                selectedModule = module;
+                selectedCategory = ModuleCategory.UTILITY;
+                selectedTab = ClientTab.SETTINGS;
+                plusShopOpen = false;
+            });
+            return true;
+        }
+        boolean stacked = parts.gridW < 250;
+        int cardGap = Math.max(8, parts.gridW / 42);
+        int cardW = stacked ? Math.max(96, parts.gridW - 4) : Math.max(112, (parts.gridW - cardGap) / 2);
+        int cardH = stacked ? Math.max(92, (parts.gridH - cardGap - 10) / 2) : Math.min(170, Math.max(122, parts.gridH - 16));
+        int cardY = parts.gridY + 4;
+        if (handlePlusPlanButton(parts.gridX, cardY, cardW, cardH, PLUS_PRICE_1M, PLUS_PLAN_1M, mouseX, mouseY)) {
+            return true;
+        }
+        return handlePlusPlanButton(stacked ? parts.gridX : parts.gridX + cardW + cardGap, stacked ? cardY + cardH + cardGap : cardY, cardW, cardH, PLUS_PRICE_3M, PLUS_PLAN_3M, mouseX, mouseY);
+    }
+
+    private boolean handlePlusPlanButton(int x, int y, int width, int height, long price, String planId, int mouseX, int mouseY) {
+        int gap = 6;
+        int buttonW = Math.max(34, (width - 24 - gap) / 2);
+        int buttonY = y + height - 32;
+        if (inside(mouseX, mouseY, x + 12, buttonY, buttonW, 24)) {
+            if (BackendState.online() && !BackendState.plusActive() && BackendState.coins() >= price) {
+                BackendClient.buyPlus(planId);
+            }
+            return true;
+        }
+        int giftX = x + 12 + buttonW + gap;
+        if (inside(mouseX, mouseY, giftX, buttonY, buttonW, 24)) {
+            if (BackendState.online() && BackendState.coins() >= price) {
+                openPlusGiftDialog(planId);
+            }
+            return true;
+        }
+        return false;
+    }
+
     private boolean handleGiftDialogClick(Layout layout, int mouseX, int mouseY) {
         int w = Math.min(330, Math.max(260, layout.width / 2));
         int h = 154;
@@ -1830,6 +2169,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
         int bw = (w - 46) / 2;
         if (inside(mouseX, mouseY, x + 18, buttonY, bw, 26)) {
             giftDialogOpen = false;
+            plusGiftPlan = "";
             return true;
         }
         if (inside(mouseX, mouseY, x + 28 + bw, buttonY, bw, 26)) {
@@ -2130,6 +2470,18 @@ public class S9LabClientScreen extends ResponsiveScreen {
         if (selectedCosmetic == null || !BackendState.online() || !BackendState.owned(selectedCosmetic.id())) {
             return;
         }
+        plusGiftPlan = "";
+        giftReceiver = "";
+        giftStatus = "";
+        giftDialogOpen = true;
+        searchFocused = false;
+    }
+
+    private void openPlusGiftDialog(String planId) {
+        if (!BackendState.online() || planId == null || planId.isBlank()) {
+            return;
+        }
+        plusGiftPlan = planId;
         giftReceiver = "";
         giftStatus = "";
         giftDialogOpen = true;
@@ -2137,7 +2489,8 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private void confirmGift() {
-        if (selectedCosmetic == null) {
+        boolean giftingPlus = plusGiftPlan != null && !plusGiftPlan.isBlank();
+        if (!giftingPlus && selectedCosmetic == null) {
             giftDialogOpen = false;
             return;
         }
@@ -2146,9 +2499,14 @@ public class S9LabClientScreen extends ResponsiveScreen {
             giftStatus = "Enter a player name or UUID.";
             return;
         }
-        BackendClient.giftCosmetic(receiver, selectedCosmetic.id());
+        if (giftingPlus) {
+            BackendClient.giftPlus(receiver, plusGiftPlan);
+        } else {
+            BackendClient.giftCosmetic(receiver, selectedCosmetic.id());
+        }
         giftStatus = "Gift request sent.";
         giftDialogOpen = false;
+        plusGiftPlan = "";
     }
 
     private static void syncSettingToCosmetic(Module module, Setting<?> setting) {
@@ -2178,7 +2536,7 @@ public class S9LabClientScreen extends ResponsiveScreen {
     }
 
     private int maxCosmeticSideScroll(int panelH) {
-        int total = CosmeticType.values().length * 42 + 28;
+        int total = (CosmeticType.values().length + 1) * 42 + 28;
         int visible = Math.max(1, panelH - 72);
         return Math.max(0, total - visible);
     }
@@ -2196,6 +2554,9 @@ public class S9LabClientScreen extends ResponsiveScreen {
             return 0;
         }
         if (cosmeticDetailsOpen) {
+            return 0;
+        }
+        if (plusShopOpen) {
             return 0;
         }
         CosmeticLayout parts = cosmeticLayout(layout);
@@ -2294,6 +2655,15 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private static String titleCase(String value) {
         String lower = value.toLowerCase(Locale.ROOT);
         return lower.substring(0, 1).toUpperCase(Locale.ROOT) + lower.substring(1);
+    }
+
+    private static String plusExpiryLabel(long expiresAt) {
+        long secondsLeft = expiresAt - System.currentTimeMillis() / 1000L;
+        if (secondsLeft <= 0L) {
+            return "EXPIRED";
+        }
+        long days = Math.max(1L, secondsLeft / 86_400L);
+        return days + " DAY" + (days == 1L ? "" : "S");
     }
 
     private static String cosmeticMenuLabel(CosmeticType type) {
