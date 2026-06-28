@@ -3,12 +3,14 @@ package site.s9lab.s9labclient.client.cosmetics.halo;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.cosmetics.Cosmetic;
+import site.s9lab.s9labclient.client.cosmetics.CosmeticManifest;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticPreviewContext;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticResolver;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticType;
@@ -16,7 +18,7 @@ import site.s9lab.s9labclient.client.module.Module;
 
 public final class HaloGeoRenderHook {
     private static final HaloGeoAnimatable ANIMATABLE = new HaloGeoAnimatable();
-    private static final Map<Identifier, HaloGeoObjectRenderer> RENDERERS = new ConcurrentHashMap<>();
+    private static final Map<String, HaloGeoObjectRenderer> RENDERERS = new ConcurrentHashMap<>();
     private static Method performRenderPassMethod;
 
     private HaloGeoRenderHook() {
@@ -33,18 +35,34 @@ public final class HaloGeoRenderHook {
         }
 
         Cosmetic cosmetic = CosmeticResolver.equippedForState(state, CosmeticType.HALO).orElse(null);
-        if (cosmetic == null || cosmetic.texture() == null) {
+        if (!(cosmetic instanceof HaloCosmetic haloCosmetic) || haloCosmetic.texture() == null) {
             return;
         }
 
+        CosmeticManifest.HaloManifest halo = S9LabClientClient.getCosmeticRegistry()
+                .manifest(haloCosmetic.id())
+                .map(CosmeticManifest::halo)
+                .orElse(new CosmeticManifest.HaloManifest(
+                        haloCosmetic.scale(),
+                        haloCosmetic.orbitRadius(),
+                        haloCosmetic.orbitSpeed(),
+                        haloCosmetic.bobAmplitude(),
+                        haloCosmetic.spinSpeed(),
+                        haloCosmetic.verticalOffset()
+                ));
+
+        String rendererKey = haloCosmetic.effectiveModel() + "|" + haloCosmetic.texture() + "|" + haloCosmetic.effectiveAnimation();
         HaloGeoObjectRenderer renderer = RENDERERS.computeIfAbsent(
-                cosmetic.texture(),
-                texture -> new HaloGeoObjectRenderer(new HaloGeoModel(texture))
+                rendererKey,
+                ignored -> new HaloGeoObjectRenderer(new HaloGeoModel(
+                        haloCosmetic.effectiveModel(),
+                        haloCosmetic.texture(),
+                        haloCosmetic.effectiveAnimation()
+                ))
         );
 
         matrices.push();
-        matrices.translate(0.0D, 1.88D, 0.0D);
-        matrices.scale(0.78F, -0.78F, 0.78F);
+        applyHaloTransform(state, matrices, halo);
 
         try {
             Method method = getPerformRenderPassMethod(renderer);
@@ -63,6 +81,25 @@ public final class HaloGeoRenderHook {
         } finally {
             matrices.pop();
         }
+    }
+
+    /**
+     * Positioniert den Halo bewusst oberhalb des Kopfes und laesst ihn leicht
+     * schweben/orbitieren. Die eigentliche Geometrie bleibt vollstaendig in
+     * GeckoLib, Java steuert hier nur die globale Platzierung.
+     */
+    private static void applyHaloTransform(PlayerEntityRenderState state, MatrixStack matrices, CosmeticManifest.HaloManifest halo) {
+        float time = state.age;
+        float orbit = time * halo.orbitSpeed();
+        float orbitX = MathHelper.cos(orbit) * halo.orbitRadius();
+        float orbitZ = MathHelper.sin(orbit) * halo.orbitRadius();
+        float bob = MathHelper.sin(time * 0.10F) * halo.bobAmplitude();
+        float sneakLift = state.isInSneakingPose ? 0.14F : 0.0F;
+        float spin = time * halo.spinSpeed();
+
+        matrices.translate(orbitX, 1.56D + halo.verticalOffset() + bob + sneakLift, orbitZ);
+        matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotation(spin));
+        matrices.scale(halo.scale(), -halo.scale(), halo.scale());
     }
 
     private static Method getPerformRenderPassMethod(HaloGeoObjectRenderer renderer) throws NoSuchMethodException {

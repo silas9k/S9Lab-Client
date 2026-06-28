@@ -11,6 +11,7 @@ import net.minecraft.util.Identifier;
 import site.s9lab.s9labclient.S9LabClient;
 import site.s9lab.s9labclient.client.cosmetics.bandana.BandanaCosmetic;
 import site.s9lab.s9labclient.client.cosmetics.cape.CapeCosmetic;
+import site.s9lab.s9labclient.client.cosmetics.halo.HaloCosmetic;
 import site.s9lab.s9labclient.client.cosmetics.hat.HatCosmetic;
 import site.s9lab.s9labclient.client.cosmetics.wings.WingCosmetic;
 
@@ -47,7 +48,10 @@ public final class CosmeticCatalogLoader {
             return;
         }
 
-        CosmeticType.byCommandName(entry.type).ifPresent(type -> registry.register(createCosmetic(type, entry)));
+        CosmeticType.byCommandName(entry.type).ifPresent(type -> {
+            Cosmetic cosmetic = createCosmetic(type, entry);
+            registry.register(cosmetic, createManifest(type, entry, cosmetic));
+        });
     }
 
     private static Cosmetic createCosmetic(CosmeticType type, Entry entry) {
@@ -82,7 +86,9 @@ public final class CosmeticCatalogLoader {
 
             case HAT -> createHatCosmetic(entry, texture);
 
-            case HALO, SHOULDER, GLINT, EMOTE -> new SimpleCosmetic(
+            case HALO -> createHaloCosmetic(entry, texture, animated);
+
+            case SHOULDER, GLINT, EMOTE -> new SimpleCosmetic(
                     entry.id,
                     entry.name,
                     type,
@@ -90,6 +96,55 @@ public final class CosmeticCatalogLoader {
                     animated
             );
         };
+    }
+
+    private static HaloCosmetic createHaloCosmetic(Entry entry, Identifier texture, boolean animated) {
+        HaloEntry halo = entry.halo == null ? new HaloEntry() : entry.halo;
+        return new HaloCosmetic(
+                entry.id,
+                entry.name,
+                texture,
+                entry.model == null || entry.model.isBlank() ? HaloCosmetic.DEFAULT_MODEL : id(entry.model),
+                entry.animation == null || entry.animation.isBlank() ? HaloCosmetic.DEFAULT_ANIMATION : id(entry.animation),
+                animated,
+                halo.scale == null ? CosmeticManifest.HaloManifest.DEFAULT.scale() : halo.scale,
+                halo.orbitRadius == null ? CosmeticManifest.HaloManifest.DEFAULT.orbitRadius() : halo.orbitRadius,
+                halo.orbitSpeed == null ? CosmeticManifest.HaloManifest.DEFAULT.orbitSpeed() : halo.orbitSpeed,
+                halo.bobAmplitude == null ? CosmeticManifest.HaloManifest.DEFAULT.bobAmplitude() : halo.bobAmplitude,
+                halo.spinSpeed == null ? CosmeticManifest.HaloManifest.DEFAULT.spinSpeed() : halo.spinSpeed,
+                halo.verticalOffset == null ? CosmeticManifest.HaloManifest.DEFAULT.verticalOffset() : halo.verticalOffset
+        );
+    }
+
+    private static CosmeticManifest createManifest(CosmeticType type, Entry entry, Cosmetic cosmetic) {
+        PreviewEntry preview = entry.preview == null ? new PreviewEntry() : entry.preview;
+        HaloEntry halo = entry.halo == null ? new HaloEntry() : entry.halo;
+        return new CosmeticManifest(
+                entry.id,
+                entry.name,
+                type,
+                cosmetic.texture(),
+                entry.model == null || entry.model.isBlank() ? null : id(entry.model),
+                entry.animation == null || entry.animation.isBlank() ? null : id(entry.animation),
+                entry.animated,
+                defaulted(entry.category, type.commandName()),
+                defaulted(entry.variantGroup, type.commandName()),
+                entry.sortOrder == null ? 0 : entry.sortOrder,
+                new CosmeticManifest.PreviewManifest(
+                        defaulted(preview.pose, "idle"),
+                        preview.yaw == null ? 180.0F : preview.yaw,
+                        preview.pitch == null ? 8.0F : preview.pitch,
+                        preview.zoom == null ? 78 : preview.zoom
+                ),
+                new CosmeticManifest.HaloManifest(
+                        halo.scale == null ? CosmeticManifest.HaloManifest.DEFAULT.scale() : halo.scale,
+                        halo.orbitRadius == null ? CosmeticManifest.HaloManifest.DEFAULT.orbitRadius() : halo.orbitRadius,
+                        halo.orbitSpeed == null ? CosmeticManifest.HaloManifest.DEFAULT.orbitSpeed() : halo.orbitSpeed,
+                        halo.bobAmplitude == null ? CosmeticManifest.HaloManifest.DEFAULT.bobAmplitude() : halo.bobAmplitude,
+                        halo.spinSpeed == null ? CosmeticManifest.HaloManifest.DEFAULT.spinSpeed() : halo.spinSpeed,
+                        halo.verticalOffset == null ? CosmeticManifest.HaloManifest.DEFAULT.verticalOffset() : halo.verticalOffset
+                )
+        );
     }
 
     private static Cosmetic createHatCosmetic(Entry entry, Identifier texture) {
@@ -175,6 +230,9 @@ public final class CosmeticCatalogLoader {
                 id("minecraft:textures/entity/enderdragon/dragon.png"),
                 true
         ));
+
+        registry.register(HaloCosmetic.goldHalo());
+        registry.register(HaloCosmetic.voidHalo());
 
         registry.register(new SimpleCosmetic(
                 "s9lab_gold_glint",
@@ -281,5 +339,26 @@ public final class CosmeticCatalogLoader {
         private String model;
         private String animation;
         private boolean animated;
+        private String category;
+        private String variantGroup;
+        private Integer sortOrder;
+        private PreviewEntry preview;
+        private HaloEntry halo;
+    }
+
+    private static final class PreviewEntry {
+        private String pose;
+        private Float yaw;
+        private Float pitch;
+        private Integer zoom;
+    }
+
+    private static final class HaloEntry {
+        private Float scale;
+        private Float orbitRadius;
+        private Float orbitSpeed;
+        private Float bobAmplitude;
+        private Float spinSpeed;
+        private Float verticalOffset;
     }
 }

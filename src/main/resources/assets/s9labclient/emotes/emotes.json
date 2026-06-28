@@ -1,0 +1,26 @@
+{
+  "emotes": [
+    {
+      "id": "t_pose",
+      "name": "T-Pose",
+      "description": "The timeless classic.",
+      "category": "Poses",
+      "animation": "s9labclient:geckolib/animations/emotes/player_emotes.animation.json",
+      "animationName": "animation.player.t_pose",
+      "durationTicks": 600,
+      "accent": "#E8E8E8",
+      "loop": true
+    },
+    {
+      "id": "griddy",
+      "name": "Griddy",
+      "description": "A rhythmic S9Lab dance.",
+      "category": "Dance",
+      "animation": "s9labclient:geckolib/animations/emotes/player_emotes.animation.json",
+      "animationName": "animation.player.griddy",
+      "durationTicks": 160,
+      "accent": "#7EA1FF",
+      "loop": true
+    }
+  ]
+}

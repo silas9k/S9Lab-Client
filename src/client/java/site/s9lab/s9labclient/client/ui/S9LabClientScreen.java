@@ -19,6 +19,7 @@ import site.s9lab.s9labclient.client.S9LabClientClient;
 import site.s9lab.s9labclient.client.backend.BackendClient;
 import site.s9lab.s9labclient.client.backend.BackendState;
 import site.s9lab.s9labclient.client.cosmetics.Cosmetic;
+import site.s9lab.s9labclient.client.cosmetics.CosmeticManifest;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticPreviewContext;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticPreviewContext.BaseVisibility;
 import site.s9lab.s9labclient.client.cosmetics.CosmeticType;
@@ -2487,8 +2488,17 @@ public class S9LabClientScreen extends ResponsiveScreen {
     private List<Cosmetic> variantsForSelectedCosmetic() {
         Cosmetic cosmetic = selectedCosmetic;
         CosmeticType type = cosmetic == null ? selectedCosmeticType : cosmetic.type();
+        CosmeticManifest selectedManifest = cosmetic == null
+                ? null
+                : S9LabClientClient.getCosmeticRegistry().manifest(cosmetic.id()).orElse(null);
         return S9LabClientClient.getCosmeticRegistry().all().stream()
-                .filter(variant -> variant.type() == type)
+                .filter(variant -> {
+                    if (selectedManifest == null) {
+                        return variant.type() == type;
+                    }
+                    CosmeticManifest variantManifest = S9LabClientClient.getCosmeticRegistry().manifest(variant.id()).orElse(null);
+                    return selectedManifest.matchesVariantGroup(variantManifest);
+                })
                 .sorted(Comparator.comparing(variant -> variant.displayName().toLowerCase(Locale.ROOT)))
                 .toList();
     }

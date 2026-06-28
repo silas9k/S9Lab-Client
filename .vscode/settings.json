@@ -1,0 +1,5 @@
+{
+  "java.debug.settings.hotCodeReplace": "auto",
+  "java.debug.settings.onBuildFailureProceed": true,
+  "git.ignoreLimitWarning": true
+}
